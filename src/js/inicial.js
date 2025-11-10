@@ -506,6 +506,24 @@ function classifyRowHighlight(label, value){
   return "";
 }
 
+function isFactorPresent(row, key){
+  if(!row) return false;
+  const raw = String(row[key] ?? "").trim();
+  if(!raw) return false;
+  return toLowerNoAccents(raw) === "si";
+}
+
+function shouldSkipCritical(acceptableValue){
+  const text = toLowerNoAccents(String(acceptableValue ?? ""));
+  if(!text.trim()) return false;
+  if(text.includes("no acept")) return false;
+  return text.includes("acept");
+}
+
+function normalizedCriticalValue(acceptableValue, criticalValue){
+  return shouldSkipCritical(acceptableValue) ? "N/A" : (criticalValue ?? "");
+}
+
 function postureIndex(label, occurrence=0){
   if(!label) return null;
   const norm = toLowerNoAccents(String(label||"")).replace(/\s+/g," ").trim();
@@ -812,10 +830,13 @@ function renderPosturaTab(post, summaryCards){
   }
   const row = post.rowArr || [];
   const planBlock = renderPosturaPlan(structure.plan, row);
+  const skipCritical = shouldSkipCritical(post.condAceptable);
   const acceptable = structure.acceptable.map(sec => renderPosturaSection(sec, row)).filter(Boolean).join("") ||
     `<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> Sin respuestas para condición aceptable.</div>`;
-  const critical = structure.critical.map(sec => renderPosturaSection(sec, row)).filter(Boolean).join("") ||
-    `<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> Sin respuestas para condición crítica.</div>`;
+  const critical = skipCritical
+    ? `<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> No se evaluó la condición crítica (N/A).</div>`
+    : (structure.critical.map(sec => renderPosturaSection(sec, row)).filter(Boolean).join("") ||
+      `<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> Sin respuestas para condición crítica.</div>`);
 
   return `
     <div class="postura-tab">
@@ -891,13 +912,16 @@ function renderMmcTab(data, structure, sheetLabel, summaryCards){
   }
 
   const row = data.rowArr || [];
+  const skipCritical = shouldSkipCritical(data.condAceptable);
   const planBlock = renderMmcPlan(structure.plan, row);
   const acceptableBlock = renderMmcSection("Preguntas evaluadas", structure.acceptable, row) ||
     `<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> Sin respuestas para condición aceptable.</div>`;
-  const criticalBlock = structure.critical && structure.critical.length
-    ? (renderMmcSection("Preguntas evaluadas", structure.critical, row) ||
-        `<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> Sin respuestas para condición crítica.</div>`)
-    : "";
+  const criticalBlock = skipCritical
+    ? `<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> No se evaluó la condición crítica (N/A).</div>`
+    : (structure.critical && structure.critical.length
+      ? (renderMmcSection("Preguntas evaluadas", structure.critical, row) ||
+          `<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> Sin respuestas para condición crítica.</div>`)
+      : "");
 
   return `
     <div class="postura-tab">
@@ -907,7 +931,7 @@ function renderMmcTab(data, structure, sheetLabel, summaryCards){
         <div class="group-title text-uppercase small text-muted fw-bold mb-2">Condición Aceptable</div>
         ${acceptableBlock}
       </div>
-      ${structure.critical && structure.critical.length ? `
+      ${(structure.critical && structure.critical.length) || skipCritical ? `
         <div class="group-block mt-4">
           <div class="group-title text-uppercase small text-muted fw-bold mb-2">Condición Crítica</div>
           ${criticalBlock}
@@ -927,11 +951,12 @@ function renderMmcEmpTab(data, summaryCards){
 /* ======= HTML Tarjeta + Modal ======= */
 function cardHtml(r, idx){
   const mov = getMovRepFor(r);
-  const status = classifyMovRep(mov?.P, mov?.W);
-  const criticalTone = classifyCriticalState(mov?.W);
+  const movCritical = normalizedCriticalValue(mov?.P, mov?.W);
+  const status = classifyMovRep(mov?.P, movCritical);
+  const criticalTone = classifyCriticalState(movCritical);
   const criticalClass = criticalTone ? ` critical-pill-${criticalTone}` : "";
   const criticalHtml = mov
-    ? `<span class="pill critical-pill${criticalClass}"><strong>Condición Crítica:</strong> ${escapeHtml(mov.W ?? "")}</span>`
+    ? `<span class="pill critical-pill${criticalClass}"><strong>Condición Crítica:</strong> ${escapeHtml(movCritical ?? "")}</span>`
     : `<span class="pill">Hoja Mov. repetitivo: sin coincidencia</span>`;
 
   return `
@@ -1003,12 +1028,17 @@ function renderMovRepTab(mov, summaryCards){
   }
 
   const rows = [];
+  const skipCritical = shouldSkipCritical(mov.P);
   if(mov.rowArr && Array.isArray(MOVREP_HEADERS) && MOVREP_HEADERS.length){
     for(let i=0;i<MOVREP_HEADERS.length;i++){
       if(SKIP_IDX.has(i)) continue;
       const label = MOVREP_HEADERS[i] || `Col${i+1}`;
       if(SKIP_LABELS.has(toLowerNoAccents(label))) continue;
-      const val = mov.rowArr[i];
+      const normLabel = toLowerNoAccents(label);
+      let val = mov.rowArr[i];
+      if(skipCritical && normLabel.includes("condicion critica")){
+        val = "N/A";
+      }
       if(String(val ?? "").trim() === "") continue;
       rows.push([label, val]);
     }
@@ -1016,7 +1046,9 @@ function renderMovRepTab(mov, summaryCards){
     for(const [k,v] of Object.entries(mov.rowObj || {})){
       if(String(v ?? "").trim() === "") continue;
       if(SKIP_LABELS.has(toLowerNoAccents(k))) continue;
-      rows.push([k, v]);
+      const normLabel = toLowerNoAccents(k);
+      const value = (skipCritical && normLabel.includes("condicion critica")) ? "N/A" : v;
+      rows.push([k, value]);
     }
   }
 
@@ -1043,28 +1075,48 @@ function renderMovRepTab(mov, summaryCards){
 }
 
 function openDetail(r){
-  const mov = getMovRepFor(r);
-  const postura = getPosturaFor(r);
-  const mmcLev = MMC_LEV_STRUCTURE ? getMmcLevFor(r) : null;
-  const mmcEmp = MMC_EMP_STRUCTURE ? getMmcEmpFor(r) : null;
+  const movRaw = getMovRepFor(r);
+  const posturaRaw = getPosturaFor(r);
+  const mmcLevRaw = MMC_LEV_STRUCTURE ? getMmcLevFor(r) : null;
+  const mmcEmpRaw = MMC_EMP_STRUCTURE ? getMmcEmpFor(r) : null;
+
+  const movCritical = normalizedCriticalValue(movRaw?.P, movRaw?.W);
+  const posturaCritical = normalizedCriticalValue(posturaRaw?.condAceptable, posturaRaw?.condCritica);
+  const mmcLevCritical = normalizedCriticalValue(mmcLevRaw?.condAceptable, mmcLevRaw?.condCritica);
+  const mmcEmpCritical = normalizedCriticalValue(mmcEmpRaw?.condAceptable, mmcEmpRaw?.condCritica);
+
+  const mov = movRaw ? { ...movRaw, W: movCritical } : null;
+  const postura = posturaRaw ? { ...posturaRaw, condCritica: posturaCritical } : null;
+  const mmcLev = mmcLevRaw ? { ...mmcLevRaw, condCritica: mmcLevCritical } : null;
+  const mmcEmp = mmcEmpRaw ? { ...mmcEmpRaw, condCritica: mmcEmpCritical } : null;
+
   const status = classifyMovRep(mov?.P, mov?.W);
+
+  const factorPresent = {
+    mov: isFactorPresent(r, 'J'),
+    postura: isFactorPresent(r, 'K'),
+    mmcLev: isFactorPresent(r, 'L'),
+    mmcEmp: isFactorPresent(r, 'M')
+  };
 
   const tabSummaries = Object.create(null);
   const addSummary = (tabId, cardHtml) => {
     if(!cardHtml) return;
     (tabSummaries[tabId] ||= []).push(cardHtml);
   };
-  addSummary("mov", renderStateCard("Mov. repetitivo · Condición aceptable", mov?.P, "bi-activity"));
-  addSummary("mov", renderStateCard("Mov. repetitivo · Condición crítica", mov?.W, "bi-exclamation-diamond-fill"));
-  if(POSTURA_HEADERS.length){
+  if(factorPresent.mov){
+    addSummary("mov", renderStateCard("Mov. repetitivo · Condición aceptable", mov?.P, "bi-activity"));
+    addSummary("mov", renderStateCard("Mov. repetitivo · Condición crítica", mov?.W, "bi-exclamation-diamond-fill"));
+  }
+  if(factorPresent.postura){
     addSummary("postura", renderStateCard("Postura estática · Condición aceptable", postura?.condAceptable, "bi-person-standing"));
     addSummary("postura", renderStateCard("Postura estática · Condición crítica", postura?.condCritica, "bi-exclamation-octagon"));
   }
-  if(MMC_LEV_STRUCTURE){
+  if(factorPresent.mmcLev && MMC_LEV_STRUCTURE){
     addSummary("mmc-lev", renderStateCard("MMC Levantamiento/Descenso · Condición aceptable", mmcLev?.condAceptable, "bi-box-seam"));
     addSummary("mmc-lev", renderStateCard("MMC Levantamiento/Descenso · Condición crítica", mmcLev?.condCritica, "bi-exclamation-octagon-fill"));
   }
-  if(MMC_EMP_STRUCTURE){
+  if(factorPresent.mmcEmp && MMC_EMP_STRUCTURE){
     addSummary("mmc-emp", renderStateCard("MMC Empuje/Arrastre · Condición aceptable", mmcEmp?.condAceptable, "bi-cart-check"));
     addSummary("mmc-emp", renderStateCard("MMC Empuje/Arrastre · Condición crítica", mmcEmp?.condCritica, "bi-exclamation-triangle-fill"));
   }
@@ -1092,33 +1144,76 @@ function openDetail(r){
   `;
 
   const tabs = [];
-  const movTab = renderMovRepTab(mov, tabSummaries["mov"]);
-  if(movTab){
-    tabs.push({ id:"mov", title:"Movimiento repetitivo", content: movTab });
-  }
-  if(POSTURA_HEADERS.length){
-    const posturaTab = renderPosturaTab(postura, tabSummaries["postura"]);
-    if(posturaTab){
-      tabs.push({ id:"postura", title:"Postura estática", content: posturaTab });
+  const disabledTabs = [];
+  const sections = [
+    {
+      id: "mov",
+      title: "Movimiento repetitivo",
+      present: factorPresent.mov,
+      available: Boolean(mov || MOVREP_HEADERS.length),
+      render: () => renderMovRepTab(mov, tabSummaries["mov"])
+    },
+    {
+      id: "postura",
+      title: "Postura estática",
+      present: factorPresent.postura,
+      available: Boolean(postura || POSTURA_HEADERS.length),
+      render: () => renderPosturaTab(postura, tabSummaries["postura"])
+    },
+    {
+      id: "mmc-lev",
+      title: "MMC Levantamiento/Descenso",
+      present: factorPresent.mmcLev,
+      available: Boolean(MMC_LEV_STRUCTURE),
+      render: () => renderMmcLevTab(mmcLev, tabSummaries["mmc-lev"])
+    },
+    {
+      id: "mmc-emp",
+      title: "MMC Empuje/Arrastre",
+      present: factorPresent.mmcEmp,
+      available: Boolean(MMC_EMP_STRUCTURE),
+      render: () => renderMmcEmpTab(mmcEmp, tabSummaries["mmc-emp"])
     }
-  }
-  if(MMC_LEV_STRUCTURE){
-    const levTab = renderMmcLevTab(mmcLev, tabSummaries["mmc-lev"]);
-    if(levTab){
-      tabs.push({ id:"mmc-lev", title:"MMC Levantamiento/Descenso", content: levTab });
-    }
-  }
-  if(MMC_EMP_STRUCTURE){
-    const empTab = renderMmcEmpTab(mmcEmp, tabSummaries["mmc-emp"]);
-    if(empTab){
-      tabs.push({ id:"mmc-emp", title:"MMC Empuje/Arrastre", content: empTab });
+  ];
+
+  for(const section of sections){
+    if(section.present){
+      const content = section.render();
+      if(content){
+        tabs.push({ id: section.id, title: section.title, content });
+      }
+    }else if(section.available){
+      disabledTabs.push(section.title);
     }
   }
 
+  const disabledBadgesList = disabledTabs.map((title) => `<span class="badge bg-secondary me-1">${escapeHtml(title)}</span>`).join(" ");
+
   let tabsHtml = "";
   if(!tabs.length){
-    tabsHtml = `<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> No hay información avanzada disponible para esta tarea.</div>`;
-  }else if(tabs.length === 1){
+    if(disabledTabs.length){
+      const disabledNav = disabledTabs.map((title) => `
+        <li class="nav-item" role="presentation">
+          <button class="nav-link disabled" type="button" tabindex="-1" aria-disabled="true">
+            ${escapeHtml(title)} <span class="badge bg-secondary ms-2">Inactiva</span>
+          </button>
+        </li>
+      `).join("");
+      tabsHtml = `
+        <div class="detail-card detail-tabs-card">
+          <h6 class="section-title mb-3">Identificaciones avanzadas</h6>
+          <ul class="nav nav-tabs detail-tabs" role="tablist">
+            ${disabledNav}
+          </ul>
+          <div class="alert alert-light border text-muted mt-3">
+            <i class="bi bi-info-circle"></i> Factores inactivos: ${disabledBadgesList}. No se encuentran presentes en la identificación inicial.
+          </div>
+        </div>
+      `;
+    }else{
+      tabsHtml = `<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> No hay información avanzada disponible para esta tarea.</div>`;
+    }
+  }else if(tabs.length === 1 && !disabledTabs.length){
     const tab = tabs[0];
     tabsHtml = `
       <div class="detail-card detail-tabs-card">
@@ -1127,10 +1222,17 @@ function openDetail(r){
       </div>
     `;
   }else{
-    const nav = tabs.map((tab, idx) => `
+    const navActive = tabs.map((tab, idx) => `
       <li class="nav-item" role="presentation">
         <button class="nav-link${idx===0 ? " active" : ""}" id="detail-tab-${tab.id}" data-bs-toggle="tab" data-bs-target="#detail-pane-${tab.id}" type="button" role="tab" aria-controls="detail-pane-${tab.id}" aria-selected="${idx===0 ? "true" : "false"}">
           ${escapeHtml(tab.title)}
+        </button>
+      </li>
+    `).join("");
+    const disabledNav = disabledTabs.map((title) => `
+      <li class="nav-item" role="presentation">
+        <button class="nav-link disabled" type="button" tabindex="-1" aria-disabled="true">
+          ${escapeHtml(title)} <span class="badge bg-secondary ms-2">Inactiva</span>
         </button>
       </li>
     `).join("");
@@ -1139,14 +1241,18 @@ function openDetail(r){
         ${tab.content}
       </div>
     `).join("");
+    const disabledNotice = disabledTabs.length
+      ? `<div class="alert alert-light border text-muted mt-3"><i class="bi bi-info-circle"></i> Factores inactivos: ${disabledBadgesList}. No se encuentran presentes en la identificación inicial.</div>`
+      : "";
     tabsHtml = `
       <div class="detail-card detail-tabs-card">
         <ul class="nav nav-tabs detail-tabs" role="tablist">
-          ${nav}
+          ${navActive}${disabledNav}
         </ul>
         <div class="tab-content">
           ${panes}
         </div>
+        ${disabledNotice}
       </div>
     `;
   }
