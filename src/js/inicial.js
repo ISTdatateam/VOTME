@@ -37,6 +37,10 @@ let RAW_ROWS = [];
 let MOVREP_MAP = Object.create(null); // key -> {P, W, rowObj, rowArr}
 let MOVREP_HEADERS = [];
 
+let POSTURA_MAP = Object.create(null); // key -> {rowObj, rowArr, condAceptable, condCritica}
+let POSTURA_HEADERS = [];
+let POSTURA_LOOKUP = Object.create(null); // normalized header -> [indexes]
+
 let FILTERS = { area: "", puesto: "", tarea: "", factorKey: "", factorState: "" };
 let STATE = { page:1, perPage:10, pageMax:1 };
 
@@ -77,7 +81,14 @@ function findHeaderIndex(headers, patterns){
 }
 function objectFromRow(headers, row){
   const o={};
-  headers.forEach((h,i)=>{ o[h||`Col${i+1}`] = row[i]??""; });
+  const seen = Object.create(null);
+  headers.forEach((h,i)=>{
+    const base = h || `Col${i+1}`;
+    const norm = base || `Col${i+1}`;
+    const count = seen[norm] = (seen[norm] || 0) + 1;
+    const key = count === 1 ? norm : `${norm} (${count})`;
+    o[key] = row[i]??"";
+  });
   return o;
 }
 
@@ -188,6 +199,10 @@ function pickMovRepSheet(wb){
   const cand = wb.SheetNames.find(n => /mov|repet/i.test(n.toLowerCase()));
   return cand || null;
 }
+function pickPosturaSheet(wb){
+  const cand = wb.SheetNames.find(n => /postura|estatic/i.test(n.toLowerCase()));
+  return cand || null;
+}
 
 function processWorkbook(arrayBuffer){
   const wb = XLSX.read(arrayBuffer, { type: "array" });
@@ -281,6 +296,63 @@ function processWorkbook(arrayBuffer){
     }
   }
 
+  /* Hoja Postura estática */
+  POSTURA_MAP = Object.create(null);
+  POSTURA_HEADERS = [];
+  POSTURA_LOOKUP = Object.create(null);
+  const posturaSheetName = pickPosturaSheet(wb);
+  if(posturaSheetName){
+    const wsPost = wb.Sheets[posturaSheetName];
+    if(wsPost){
+      const rows2d = XLSX.utils.sheet_to_json(wsPost, { header:1, defval:"" });
+      if(rows2d.length){
+        let headerRow = null;
+        let headerIndex = -1;
+        for(let i=0;i<rows2d.length;i++){
+          const row = rows2d[i] || [];
+          if(row.some(cell => /área de trabajo|area de trabajo/i.test(String(cell || "")))){
+            headerRow = row;
+            headerIndex = i;
+            break;
+          }
+        }
+        if(headerRow){
+          const headers = headerRow.map(h => String(h||""));
+          POSTURA_HEADERS = headers;
+          const lookup = Object.create(null);
+          headers.forEach((h,i)=>{
+            const norm = toLowerNoAccents(String(h||"")).replace(/\s+/g," ").trim();
+            if(!norm) return;
+            (lookup[norm] || (lookup[norm] = [])).push(i);
+          });
+          POSTURA_LOOKUP = lookup;
+
+          const idxArea   = findHeaderIndex(headers, ["área de trabajo","area de trabajo"]) ?? 1;
+          const idxPuesto = findHeaderIndex(headers, ["puesto de trabajo","puesto"]) ?? 2;
+          const idxTarea  = findHeaderIndex(headers, ["tareas del puesto","tarea"]) ?? 3;
+          const idxAcept  = findHeaderIndex(headers, ["condición aceptable","condicion aceptable"]) ?? 29;
+          const idxCrit   = findHeaderIndex(headers, ["condición crítica","condicion critica"]) ?? 47;
+
+          for(let i=headerIndex+1;i<rows2d.length;i++){
+            const r = rows2d[i] || [];
+            const area   = r[idxArea]   ?? "";
+            const puesto = r[idxPuesto] ?? "";
+            const tarea  = r[idxTarea]  ?? "";
+            if(!(area||puesto||tarea)) continue;
+            const key = keyTriple(area, puesto, tarea);
+            const rowObj = objectFromRow(headers, r);
+            POSTURA_MAP[key] = {
+              rowArr: r.slice(),
+              rowObj,
+              condAceptable: r[idxAcept] ?? "",
+              condCritica: r[idxCrit] ?? ""
+            };
+          }
+        }
+      }
+    }
+  }
+
   populateArea();
   populatePuesto(true);
   populateTarea(true);
@@ -331,6 +403,28 @@ function classifyRowHighlight(label, value){
     if(crit === "warn") return "is-critica-warn";
     return "";
   }
+  return "";
+}
+
+function postureIndex(label, occurrence=0){
+  if(!label) return null;
+  const norm = toLowerNoAccents(String(label||"")).replace(/\s+/g," ").trim();
+  const arr = POSTURA_LOOKUP[norm];
+  if(!arr || arr.length === 0) return null;
+  return arr[Math.min(occurrence, arr.length - 1)];
+}
+
+function postureEntry(label, occurrence=0){
+  const idx = postureIndex(label, occurrence);
+  if(idx == null) return { label, index:null };
+  return { label: POSTURA_HEADERS[idx] || label, index: idx };
+}
+
+function stateHighlightClass(label, value){
+  const base = classifyRowHighlight(label, value);
+  if(base === "is-aceptable-ok") return "hl-ok";
+  if(base === "is-aceptable-bad" || base === "is-critica-bad") return "hl-risk";
+  if(base === "is-critica-warn") return "hl-warn";
   return "";
 }
 
@@ -403,6 +497,10 @@ function getMovRepFor(r){
   const k = keyTriple(r.B, r.C, r.D);
   return MOVREP_MAP[k] || null;
 }
+function getPosturaFor(r){
+  const k = keyTriple(r.B, r.C, r.D);
+  return POSTURA_MAP[k] || null;
+}
 function classifyMovRep(p, w){
   const s = `${String(p||"")} ${String(w||"")}`;
   const t = toLowerNoAccents(s);
@@ -435,6 +533,189 @@ function factorChips(r){
     </span>`;
   }
   return parts.join("");
+}
+
+function renderStateCard(title, value, icon){
+  const cls = stateHighlightClass(title, value) || "hl-neutral";
+  const valText = String(value ?? "").trim();
+  const display = valText ? escapeHtml(valText) : '<span class="text-muted">Sin dato</span>';
+  const iconHtml = icon ? `<i class="bi ${icon}"></i>` : '';
+  return `
+    <div class="col-md-6 col-xl-3">
+      <div class="state-card ${cls}">
+        <div class="sc-head">${iconHtml}<span>${escapeHtml(title)}</span></div>
+        <div class="sc-body fw-bold">${display}</div>
+      </div>
+    </div>
+  `;
+}
+
+function getPosturaStructure(){
+  if(!POSTURA_HEADERS.length) return null;
+  const mk = (label, occurrence=0) => postureEntry(label, occurrence);
+
+  return {
+    acceptable: [
+      {
+        title: "Condición Aceptable (CABEZA Y TRONCO)",
+        entries: [
+          mk("¿Las posturas de tronco y cuello son simétricas?"),
+          mk("En caso de haber flexión de tronco (inclinación hacia delante), ¿es menor a 20º?, o en caso de existir extensión (inclinación hacia atrás), ¿el tronco está totalmente apoyado?"),
+          mk("Si existe flexión de tronco entre 20º y 60º, ¿este se encuentra totalmente apoyado?"),
+          mk("¿Está ausente la extensión de cuello?"),
+          mk("En caso de que exista flexión de cuello, ¿no supera los 25º?"),
+          mk("Estando la cabeza inclinada hacia atrás (extensión), ¿se encuentra totalmente apoyada?, o en caso de inclinación anterior (flexión), ¿está a menos de 25º?"),
+          mk("Si está sentado, ¿la curvatura de la espalda se mantiene no forzada?")
+        ]
+      },
+      {
+        title: "Condición Aceptable · Miembros superiores",
+        entries: [
+          mk("Miembro con mayor exigencia", 0),
+          mk("¿Están ausentes las posturas de MMSS separadas del cuerpo, elevadas sobre nivel de hombro de manera sostenida y no apoyadas?"),
+          mk("¿Los hombros no se encuentran levantados?"),
+          mk("Estando el brazo sin apoyo completo, ¿La elevación del miembro superior es menor a 20°?"),
+          mk("Con el brazo totalmente apoyado, ¿la elevación del miembro superior no supera los 60°?"),
+          mk("¿Están ausentes la flexión / extensión extrema de codo y la rotación extrema de antebrazo?"),
+          mk("¿Está ausente el giro extremo del antebrazo?")
+        ]
+      },
+      {
+        title: "Condición Aceptable · Miembros inferiores",
+        entries: [
+          mk("Miembro con mayor exigencia", 1),
+          mk("¿Está ausente la flexión extrema de rodilla?"),
+          mk("En postura de pie ¿La rodilla no está en flexión?"),
+          mk("¿El tobillo está en posición neutra?"),
+          mk("¿Están ausentes las posiciones cuclillas y arrodillado?"),
+          mk("Cuando está sentado, ¿El ángulo de la rodilla está entre 90º y 135º?")
+        ]
+      }
+    ],
+    acceptableResult: mk("Condición Aceptable"),
+    critical: [
+      {
+        title: "Condición Crítica (CABEZA Y TRONCO)",
+        entries: [
+          mk("¿La postura de tronco o la postura de cuello están en rangos extremos?"),
+          mk("¿Existe flexión de tronco (inclinación hacia adelante) de 60° o más?"),
+          mk("¿Existe flexión de tronco (aun cuando sea levemente) durante más de 4 minutos?"),
+          mk("¿Está la cabeza extendida (inclinada hacia atrás) sin apoyo?"),
+          mk("¿Está la cabeza en flexión (inclinación hacia adelante) de 85° o más?"),
+          mk("¿Está la cabeza en flexión (aun cuando sea levemente) durante más de 8 minutos?"),
+          mk("Si está sentado, ¿la espalda (región lumbar) está forzada y no logra mantener la curvatura natural?")
+        ]
+      },
+      {
+        title: "Condición Crítica · Miembros superiores",
+        entries: [
+          mk("¿Hay posturas de brazos que los trabajadores relaten como muy incomodas y que les impiden el normal desenvolvimiento?"),
+          mk("¿Los hombros se encuentran levantados sobre los 60°?"),
+          mk("¿Los hombros se encuentran levantados (aún cuando sea levemente) durante más de 3 minutos?"),
+          mk("¿Hay flexión / extensión extrema de codo y rotación extrema de antebrazo?"),
+          mk("¿Hay giro extremo de muñeca?")
+        ]
+      },
+      {
+        title: "Condición Crítica · Miembros inferiores",
+        entries: [
+          mk("¿Hay flexión extrema de rodilla (posición de cuclillas o sentado en los talones)?"),
+          mk("Estando en postura de pie, ¿la rodilla se encuentra en flexión leve sostenida?"),
+          mk("¿El tobillo se encuentra en una posición extrema de flexión o extensión?"),
+          mk("¿Se adoptan posiciones en cuclillas y/o arrodillado de la rodilla?"),
+          mk("Estando sentado, ¿la angulación de rodilla es menor de 90° y mayor de 135°?")
+        ]
+      }
+    ],
+    criticalResult: mk("Condición Crítica"),
+    plan: [
+      mk("Fecha aplicación identificación avanzada"),
+      mk("Medidas de control (administrativas)"),
+      mk("Medidas de control (Ingeniería)"),
+      mk("Responsable aplicación medida"),
+      mk("Fecha de implementación medidas (Max 90 días)"),
+      mk("Evidencia")
+    ]
+  };
+}
+
+function renderPosturaSection(section, row){
+  if(!section) return "";
+  const body = (section.entries || []).map((entry) => {
+    if(entry.index == null) return null;
+    const raw = row[entry.index];
+    const value = String(raw ?? "").trim();
+    const cell = value ? escapeHtml(value) : '<span class="text-muted fst-italic">Sin dato</span>';
+    const rowCls = classifyRowHighlight(entry.label, raw);
+    return `<tr class="${rowCls}"><th>${escapeHtml(entry.label)}</th><td>${cell}</td></tr>`;
+  }).filter(Boolean);
+  if(!body.length) return "";
+  return `
+    <div class="detail-section">
+      <h6 class="section-title">${escapeHtml(section.title)}</h6>
+      <div class="table-like table-compact">
+        <table>
+          <thead><tr><th style="min-width:260px">Pregunta</th><th>Respuesta</th></tr></thead>
+          <tbody>${body.join("")}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderPosturaPlan(entries, row){
+  if(!entries || !entries.length) return "";
+  const items = entries.map((entry) => {
+    if(entry.index == null) return null;
+    const raw = row[entry.index];
+    const value = String(raw ?? "").trim();
+    const cell = value ? escapeHtml(value) : '<span class="text-muted fst-italic">Sin dato</span>';
+    return `
+      <div class="plan-item">
+        <div class="plan-label">${escapeHtml(entry.label)}</div>
+        <div class="plan-value">${cell}</div>
+      </div>
+    `;
+  }).filter(Boolean);
+  if(!items.length) return "";
+  return `
+    <div class="detail-section">
+      <h6 class="section-title">Plan de acción</h6>
+      <div class="plan-grid">
+        ${items.join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderPosturaTab(post){
+  if(!post){
+    return `<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> No se encontraron coincidencias en la hoja “Postura estática”.</div>`;
+  }
+  const structure = getPosturaStructure();
+  if(!structure){
+    return `<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> No se pudo interpretar la hoja “Postura estática”.</div>`;
+  }
+  const row = post.rowArr || [];
+  const acceptable = structure.acceptable.map(sec => renderPosturaSection(sec, row)).filter(Boolean).join("") ||
+    `<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> Sin respuestas para condición aceptable.</div>`;
+  const critical = structure.critical.map(sec => renderPosturaSection(sec, row)).filter(Boolean).join("") ||
+    `<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> Sin respuestas para condición crítica.</div>`;
+  const plan = renderPosturaPlan(structure.plan, row);
+
+  return `
+    <div class="postura-tab">
+      <div class="group-block">
+        <div class="group-title text-uppercase small text-muted fw-bold mb-2">Condición Aceptable</div>
+        ${acceptable}
+      </div>
+      <div class="group-block mt-4">
+        <div class="group-title text-uppercase small text-muted fw-bold mb-2">Condición Crítica</div>
+        ${critical}
+      </div>
+      ${plan ? `<div class="group-block mt-4">${plan}</div>` : ""}
+    </div>
+  `;
 }
 
 /* ======= HTML Tarjeta + Modal ======= */
@@ -509,22 +790,63 @@ const SKIP_LABELS = new Set([
   "mujeres","col2","col3","col4","col5","col6","col7","col8","col9","n°","n."
 ]);
 
-function openDetail(r){
-  const mov = getMovRepFor(r);
-  const status = classifyMovRep(mov?.P, mov?.W);
+function renderMovRepTab(mov){
+  if(!mov || !(mov.rowArr || mov.rowObj)){
+    return `<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> No se encontraron detalles coincidentes en la hoja “Movimiento repetitivo”.</div>`;
+  }
 
-  const pText = String(mov?.P ?? "").trim();
-  const wText = String(mov?.W ?? "").trim();
-  const pBad  = /no acept|criti|alto/i.test(pText);
-  const wBad  = /no acept|criti|alto/i.test(wText);
+  const rows = [];
+  if(mov.rowArr && Array.isArray(MOVREP_HEADERS) && MOVREP_HEADERS.length){
+    for(let i=0;i<MOVREP_HEADERS.length;i++){
+      if(SKIP_IDX.has(i)) continue;
+      const label = MOVREP_HEADERS[i] || `Col${i+1}`;
+      if(SKIP_LABELS.has(toLowerNoAccents(label))) continue;
+      const val = mov.rowArr[i];
+      if(String(val ?? "").trim() === "") continue;
+      rows.push([label, val]);
+    }
+  }else{
+    for(const [k,v] of Object.entries(mov.rowObj || {})){
+      if(String(v ?? "").trim() === "") continue;
+      if(SKIP_LABELS.has(toLowerNoAccents(k))) continue;
+      rows.push([k, v]);
+    }
+  }
 
+  if(!rows.length){
+    return `<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> Sin respuestas registradas en esta hoja.</div>`;
+  }
 
+  const bodyHtml = rows.map(([k,v]) => {
+    const rowCls = classifyRowHighlight(k, v);
+    return `<tr class="${rowCls}"><th>${escapeHtml(k)}</th><td>${escapeHtml(String(v))}</td></tr>`;
+  }).join("");
 
-  const statesBlock = `
-    <div class="row g-3 mb-3">
-
+  return `
+    <div class="table-like">
+      <table>
+        <thead><tr><th style="min-width:260px">Pregunta</th><th>Respuesta</th></tr></thead>
+        <tbody>${bodyHtml}</tbody>
+      </table>
     </div>
   `;
+}
+
+function openDetail(r){
+  const mov = getMovRepFor(r);
+  const postura = getPosturaFor(r);
+  const status = classifyMovRep(mov?.P, mov?.W);
+
+  const stateItems = [];
+  stateItems.push(renderStateCard("Mov. repetitivo · Condición aceptable", mov?.P, "bi-activity"));
+  stateItems.push(renderStateCard("Mov. repetitivo · Condición crítica", mov?.W, "bi-exclamation-diamond-fill"));
+  if(POSTURA_HEADERS.length){
+    stateItems.push(renderStateCard("Postura estática · Condición aceptable", postura?.condAceptable, "bi-person-standing"));
+    stateItems.push(renderStateCard("Postura estática · Condición crítica", postura?.condCritica, "bi-exclamation-octagon"));
+  }
+  const statesBlock = stateItems.length
+    ? `<div class="row g-3 mb-3">${stateItems.join("")}</div>`
+    : "";
 
   const header = `
     <div class="detail-card mb-3">
@@ -549,50 +871,56 @@ function openDetail(r){
     </div>
   `;
 
-  // Tabla de preguntas/respuestas de la fila “Mov. Repetitivo”
-  let qa = "";
-  if(mov && (mov.rowArr || mov.rowObj)){
-    const rows = [];
-    if (mov.rowArr && Array.isArray(MOVREP_HEADERS) && MOVREP_HEADERS.length){
-      for(let i=0;i<MOVREP_HEADERS.length;i++){
-        if(SKIP_IDX.has(i)) continue;                                // ignora Col2..Col9
-        const label = MOVREP_HEADERS[i] || `Col${i+1}`;
-        if(SKIP_LABELS.has(toLowerNoAccents(label))) continue;       // ignora por título (ej. Mujeres)
-        const val = mov.rowArr[i];
-        if(String(val ?? "").trim() === "") continue;
-        rows.push([label, val]);
-      }
-    }else{
-      for(const [k,v] of Object.entries(mov.rowObj)){
-        if(String(v ?? "").trim() === "") continue;
-        if(SKIP_LABELS.has(toLowerNoAccents(k))) continue;
-        rows.push([k, v]);
-      }
+  const tabs = [];
+  const movTab = renderMovRepTab(mov);
+  if(movTab){
+    tabs.push({ id:"mov", title:"Movimiento repetitivo", content: movTab });
+  }
+  if(POSTURA_HEADERS.length){
+    const posturaTab = renderPosturaTab(postura);
+    if(posturaTab){
+      tabs.push({ id:"postura", title:"Postura estática", content: posturaTab });
     }
+  }
 
-    const headHtml = `<thead><tr><th style="min-width:260px">Pregunta</th><th>Respuesta</th></tr></thead>`;
-    const bodyHtml = `<tbody>${
-      rows.map(([k,v]) => {
-        const rowCls = classifyRowHighlight(k, v);
-        return `<tr class="${rowCls}"><th>${escapeHtml(k)}</th><td>${escapeHtml(String(v))}</td></tr>`;
-      }).join("")
-    }</tbody>`;
-    qa = `
-      <div class="table-like">
-        <table>${headHtml}${bodyHtml}</table>
+  let tabsHtml = "";
+  if(!tabs.length){
+    tabsHtml = `<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> No hay información avanzada disponible para esta tarea.</div>`;
+  }else if(tabs.length === 1){
+    const tab = tabs[0];
+    tabsHtml = `
+      <div class="detail-card detail-tabs-card">
+        <h6 class="section-title mb-3">${escapeHtml(tab.title)}</h6>
+        ${tab.content}
       </div>
     `;
   }else{
-    qa = `<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> No se encontraron detalles coincidentes en la hoja “Movimiento repetitivo”.</div>`;
+    const nav = tabs.map((tab, idx) => `
+      <li class="nav-item" role="presentation">
+        <button class="nav-link${idx===0 ? " active" : ""}" id="detail-tab-${tab.id}" data-bs-toggle="tab" data-bs-target="#detail-pane-${tab.id}" type="button" role="tab" aria-controls="detail-pane-${tab.id}" aria-selected="${idx===0 ? "true" : "false"}">
+          ${escapeHtml(tab.title)}
+        </button>
+      </li>
+    `).join("");
+    const panes = tabs.map((tab, idx) => `
+      <div class="tab-pane fade${idx===0 ? " show active" : ""}" id="detail-pane-${tab.id}" role="tabpanel" aria-labelledby="detail-tab-${tab.id}">
+        ${tab.content}
+      </div>
+    `).join("");
+    tabsHtml = `
+      <div class="detail-card detail-tabs-card">
+        <ul class="nav nav-tabs detail-tabs" role="tablist">
+          ${nav}
+        </ul>
+        <div class="tab-content">
+          ${panes}
+        </div>
+      </div>
+    `;
   }
 
-  el("detailBody").innerHTML = `
-    ${header}
-    <div class="detail-grid">
-      ${qa}
-    </div>
-  `;
-  el("detailTitle").textContent = `Detalle · Movimiento repetitivo`;
+  el("detailBody").innerHTML = `${header}${tabsHtml}`;
+  el("detailTitle").textContent = `Detalle · Identificación avanzada`;
   const modal = bootstrap.Modal.getOrCreateInstance('#detailModal');
   modal.show();
 }
