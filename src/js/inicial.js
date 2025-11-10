@@ -306,6 +306,14 @@ function populatePuesto(){
   sel.disabled = opts.length === 0;
 }
 
+function classifyCriticalState(value){
+  const val = toLowerNoAccents(String(value || ""));
+  if(!val) return "";
+  if(/no\s*(es\s*)?crit/.test(val)) return "warn";
+  if(/crit/.test(val)) return "bad";
+  return "";
+}
+
 function classifyRowHighlight(label, value){
   const lab = toLowerNoAccents(String(label||""));
   const val = toLowerNoAccents(String(value||""));
@@ -316,9 +324,12 @@ function classifyRowHighlight(label, value){
     if(val.includes("acept"))    return "is-aceptable-ok";
   }
 
-  // Condición Crítica: ambas variantes en amarillo (según tu instrucción)
+  // Condición Crítica: "No crítico" => amarillo; "Crítico" => rojo
   if(lab.includes("condicion critica") || lab.includes("condición crítica")){
-    return "is-critica";
+    const crit = classifyCriticalState(value);
+    if(crit === "bad") return "is-critica-bad";
+    if(crit === "warn") return "is-critica-warn";
+    return "";
   }
   return "";
 }
@@ -430,6 +441,11 @@ function factorChips(r){
 function cardHtml(r, idx){
   const mov = getMovRepFor(r);
   const status = classifyMovRep(mov?.P, mov?.W);
+  const criticalTone = classifyCriticalState(mov?.W);
+  const criticalClass = criticalTone ? ` critical-pill-${criticalTone}` : "";
+  const criticalHtml = mov
+    ? `<span class="pill critical-pill${criticalClass}"><strong>Condición Crítica:</strong> ${escapeHtml(mov.W ?? "")}</span>`
+    : `<span class="pill">Hoja Mov. repetitivo: sin coincidencia</span>`;
 
   return `
     <div class="col" data-idx="${idx}">
@@ -473,8 +489,7 @@ function cardHtml(r, idx){
             <span class="status-pill ${status.cls}" title="Estado según hoja Movimiento repetitivo (P/W)">
               <i class="bi bi-activity"></i> Condición Aceptable: ${status.label}
             </span>
-            ${mov ? `<span class="pill"><strong>Condición Crítica:</strong> ${escapeHtml(mov.W??"")}</span>`
-                 : `<span class="pill">Hoja Mov. repetitivo: sin coincidencia</span>`}
+            ${criticalHtml}
           </div>
 
           <div class="d-flex justify-content-end mt-3">
