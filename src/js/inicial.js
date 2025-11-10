@@ -952,12 +952,45 @@ function renderMmcEmpTab(data, summaryCards){
 function cardHtml(r, idx){
   const mov = getMovRepFor(r);
   const movCritical = normalizedCriticalValue(mov?.P, mov?.W);
+  const posturaRaw = POSTURA_HEADERS.length ? getPosturaFor(r) : null;
+  const posturaCritical = normalizedCriticalValue(posturaRaw?.condAceptable, posturaRaw?.condCritica);
+  const mmcLevRaw = MMC_LEV_STRUCTURE ? getMmcLevFor(r) : null;
+  const mmcLevCritical = normalizedCriticalValue(mmcLevRaw?.condAceptable, mmcLevRaw?.condCritica);
+  const mmcEmpRaw = MMC_EMP_STRUCTURE ? getMmcEmpFor(r) : null;
+  const mmcEmpCritical = normalizedCriticalValue(mmcEmpRaw?.condAceptable, mmcEmpRaw?.condCritica);
   const status = classifyMovRep(mov?.P, movCritical);
   const criticalTone = classifyCriticalState(movCritical);
   const criticalClass = criticalTone ? ` critical-pill-${criticalTone}` : "";
   const criticalHtml = mov
     ? `<span class="pill critical-pill${criticalClass}"><strong>Condición Crítica:</strong> ${escapeHtml(movCritical ?? "")}</span>`
     : `<span class="pill">Hoja Mov. repetitivo: sin coincidencia</span>`;
+  const factorPresent = {
+    mov: isFactorPresent(r, 'J'),
+    postura: isFactorPresent(r, 'K'),
+    mmcLev: isFactorPresent(r, 'L'),
+    mmcEmp: isFactorPresent(r, 'M')
+  };
+  const summaryCards = [];
+  const addSummary = (html) => { if(html) summaryCards.push(html); };
+  if(factorPresent.mov){
+    addSummary(renderStateCard("Trabajo repetitivo de miembros superiores · Condición aceptable", mov?.P, "bi-activity"));
+    addSummary(renderStateCard("Trabajo repetitivo de miembros superiores · Condición crítica", movCritical, "bi-exclamation-diamond-fill"));
+  }
+  if(factorPresent.postura && POSTURA_HEADERS.length){
+    addSummary(renderStateCard("Postura estática · Condición aceptable", posturaRaw?.condAceptable, "bi-person-standing"));
+    addSummary(renderStateCard("Postura estática · Condición crítica", posturaCritical, "bi-exclamation-octagon"));
+  }
+  if(factorPresent.mmcLev && MMC_LEV_STRUCTURE){
+    addSummary(renderStateCard("MMC Levantamiento/Descenso · Condición aceptable", mmcLevRaw?.condAceptable, "bi-box-seam"));
+    addSummary(renderStateCard("MMC Levantamiento/Descenso · Condición crítica", mmcLevCritical, "bi-exclamation-octagon-fill"));
+  }
+  if(factorPresent.mmcEmp && MMC_EMP_STRUCTURE){
+    addSummary(renderStateCard("MMC Empuje/Arrastre · Condición aceptable", mmcEmpRaw?.condAceptable, "bi-cart-check"));
+    addSummary(renderStateCard("MMC Empuje/Arrastre · Condición crítica", mmcEmpCritical, "bi-exclamation-triangle-fill"));
+  }
+  const summaryBlock = summaryCards.length
+    ? `<div class="mt-3"><div class="small text-muted text-uppercase fw-bold mb-2">Factores evaluados</div><div class="tab-summary row g-3">${summaryCards.join("")}</div></div>`
+    : "";
 
   return `
     <div class="col" data-idx="${idx}">
@@ -1003,6 +1036,8 @@ function cardHtml(r, idx){
             </span>
             ${criticalHtml}
           </div>
+
+          ${summaryBlock}
 
           <div class="d-flex justify-content-end mt-3">
             <button type="button" class="btn btn-primary btn-sm btn-open" data-open>
