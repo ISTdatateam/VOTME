@@ -265,6 +265,9 @@ body{
 .hl-warn .sc-head{ color:var(--warn); }
 .hl-risk .sc-head{ color:var(--risk); }
 .state-card .sc-body{ font-size:1rem; }
+.tab-summary{ margin-bottom:1.5rem; }
+.tab-summary:last-child{ margin-bottom:0; }
+.tab-summary .state-card{ height:100%; }
 
 .table-compact table th,
 .table-compact table td{ font-size:.9rem; }

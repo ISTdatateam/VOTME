@@ -658,6 +658,11 @@ function renderStateCard(title, value, icon){
   `;
 }
 
+function renderTabSummary(cards){
+  if(!cards || !cards.length) return "";
+  return `<div class="tab-summary row g-3">${cards.join("")}</div>`;
+}
+
 function getPosturaStructure(){
   if(!POSTURA_HEADERS.length) return null;
   const mk = (label, occurrence=0) => postureEntry(label, occurrence);
@@ -796,13 +801,14 @@ function renderPosturaPlan(entries, row){
   `;
 }
 
-function renderPosturaTab(post){
+function renderPosturaTab(post, summaryCards){
+  const summaryBlock = renderTabSummary(summaryCards);
   if(!post){
-    return `<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> No se encontraron coincidencias en la hoja “Postura estática”.</div>`;
+    return `<div class="postura-tab">${summaryBlock}<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> No se encontraron coincidencias en la hoja “Postura estática”.</div></div>`;
   }
   const structure = getPosturaStructure();
   if(!structure){
-    return `<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> No se pudo interpretar la hoja “Postura estática”.</div>`;
+    return `<div class="postura-tab">${summaryBlock}<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> No se pudo interpretar la hoja “Postura estática”.</div></div>`;
   }
   const row = post.rowArr || [];
   const acceptable = structure.acceptable.map(sec => renderPosturaSection(sec, row)).filter(Boolean).join("") ||
@@ -813,6 +819,7 @@ function renderPosturaTab(post){
 
   return `
     <div class="postura-tab">
+      ${summaryBlock}
       <div class="group-block">
         <div class="group-title text-uppercase small text-muted fw-bold mb-2">Condición Aceptable</div>
         ${acceptable}
@@ -874,12 +881,13 @@ function renderMmcPlan(entries, row){
   return renderPosturaPlan(entries, row);
 }
 
-function renderMmcTab(data, structure, sheetLabel){
+function renderMmcTab(data, structure, sheetLabel, summaryCards){
+  const summaryBlock = renderTabSummary(summaryCards);
   if(!structure){
-    return `<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> No se pudo interpretar la hoja “${escapeHtml(sheetLabel)}”.</div>`;
+    return `<div class="postura-tab">${summaryBlock}<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> No se pudo interpretar la hoja “${escapeHtml(sheetLabel)}”.</div></div>`;
   }
   if(!data){
-    return `<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> No se encontraron coincidencias en la hoja “${escapeHtml(sheetLabel)}”.</div>`;
+    return `<div class="postura-tab">${summaryBlock}<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> No se encontraron coincidencias en la hoja “${escapeHtml(sheetLabel)}”.</div></div>`;
   }
 
   const row = data.rowArr || [];
@@ -893,6 +901,7 @@ function renderMmcTab(data, structure, sheetLabel){
 
   return `
     <div class="postura-tab">
+      ${summaryBlock}
       <div class="group-block">
         <div class="group-title text-uppercase small text-muted fw-bold mb-2">Condición Aceptable</div>
         ${acceptableBlock}
@@ -907,12 +916,12 @@ function renderMmcTab(data, structure, sheetLabel){
   `;
 }
 
-function renderMmcLevTab(data){
-  return renderMmcTab(data, MMC_LEV_STRUCTURE, "MMC Levantamiento/Descenso");
+function renderMmcLevTab(data, summaryCards){
+  return renderMmcTab(data, MMC_LEV_STRUCTURE, "MMC Levantamiento/Descenso", summaryCards);
 }
 
-function renderMmcEmpTab(data){
-  return renderMmcTab(data, MMC_EMP_STRUCTURE, "MMC Empuje/Arrastre");
+function renderMmcEmpTab(data, summaryCards){
+  return renderMmcTab(data, MMC_EMP_STRUCTURE, "MMC Empuje/Arrastre", summaryCards);
 }
 
 /* ======= HTML Tarjeta + Modal ======= */
@@ -987,9 +996,10 @@ const SKIP_LABELS = new Set([
   "mujeres","col2","col3","col4","col5","col6","col7","col8","col9","n°","n."
 ]);
 
-function renderMovRepTab(mov){
+function renderMovRepTab(mov, summaryCards){
+  const summaryBlock = renderTabSummary(summaryCards);
   if(!mov || !(mov.rowArr || mov.rowObj)){
-    return `<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> No se encontraron detalles coincidentes en la hoja “Movimiento repetitivo”.</div>`;
+    return `<div class="postura-tab">${summaryBlock}<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> No se encontraron detalles coincidentes en la hoja “Movimiento repetitivo”.</div></div>`;
   }
 
   const rows = [];
@@ -1011,7 +1021,7 @@ function renderMovRepTab(mov){
   }
 
   if(!rows.length){
-    return `<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> Sin respuestas registradas en esta hoja.</div>`;
+    return `<div class="postura-tab">${summaryBlock}<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> Sin respuestas registradas en esta hoja.</div></div>`;
   }
 
   const bodyHtml = rows.map(([k,v]) => {
@@ -1020,11 +1030,14 @@ function renderMovRepTab(mov){
   }).join("");
 
   return `
-    <div class="table-like">
-      <table>
-        <thead><tr><th style="min-width:260px">Pregunta</th><th>Respuesta</th></tr></thead>
-        <tbody>${bodyHtml}</tbody>
-      </table>
+    <div class="postura-tab">
+      ${summaryBlock}
+      <div class="table-like">
+        <table>
+          <thead><tr><th style="min-width:260px">Pregunta</th><th>Respuesta</th></tr></thead>
+          <tbody>${bodyHtml}</tbody>
+        </table>
+      </div>
     </div>
   `;
 }
@@ -1036,24 +1049,25 @@ function openDetail(r){
   const mmcEmp = MMC_EMP_STRUCTURE ? getMmcEmpFor(r) : null;
   const status = classifyMovRep(mov?.P, mov?.W);
 
-  const stateItems = [];
-  stateItems.push(renderStateCard("Mov. repetitivo · Condición aceptable", mov?.P, "bi-activity"));
-  stateItems.push(renderStateCard("Mov. repetitivo · Condición crítica", mov?.W, "bi-exclamation-diamond-fill"));
+  const tabSummaries = Object.create(null);
+  const addSummary = (tabId, cardHtml) => {
+    if(!cardHtml) return;
+    (tabSummaries[tabId] ||= []).push(cardHtml);
+  };
+  addSummary("mov", renderStateCard("Mov. repetitivo · Condición aceptable", mov?.P, "bi-activity"));
+  addSummary("mov", renderStateCard("Mov. repetitivo · Condición crítica", mov?.W, "bi-exclamation-diamond-fill"));
   if(POSTURA_HEADERS.length){
-    stateItems.push(renderStateCard("Postura estática · Condición aceptable", postura?.condAceptable, "bi-person-standing"));
-    stateItems.push(renderStateCard("Postura estática · Condición crítica", postura?.condCritica, "bi-exclamation-octagon"));
+    addSummary("postura", renderStateCard("Postura estática · Condición aceptable", postura?.condAceptable, "bi-person-standing"));
+    addSummary("postura", renderStateCard("Postura estática · Condición crítica", postura?.condCritica, "bi-exclamation-octagon"));
   }
   if(MMC_LEV_STRUCTURE){
-    stateItems.push(renderStateCard("MMC Levantamiento/Descenso · Condición aceptable", mmcLev?.condAceptable, "bi-box-seam"));
-    stateItems.push(renderStateCard("MMC Levantamiento/Descenso · Condición crítica", mmcLev?.condCritica, "bi-exclamation-octagon-fill"));
+    addSummary("mmc-lev", renderStateCard("MMC Levantamiento/Descenso · Condición aceptable", mmcLev?.condAceptable, "bi-box-seam"));
+    addSummary("mmc-lev", renderStateCard("MMC Levantamiento/Descenso · Condición crítica", mmcLev?.condCritica, "bi-exclamation-octagon-fill"));
   }
   if(MMC_EMP_STRUCTURE){
-    stateItems.push(renderStateCard("MMC Empuje/Arrastre · Condición aceptable", mmcEmp?.condAceptable, "bi-cart-check"));
-    stateItems.push(renderStateCard("MMC Empuje/Arrastre · Condición crítica", mmcEmp?.condCritica, "bi-exclamation-triangle-fill"));
+    addSummary("mmc-emp", renderStateCard("MMC Empuje/Arrastre · Condición aceptable", mmcEmp?.condAceptable, "bi-cart-check"));
+    addSummary("mmc-emp", renderStateCard("MMC Empuje/Arrastre · Condición crítica", mmcEmp?.condCritica, "bi-exclamation-triangle-fill"));
   }
-  const statesBlock = stateItems.length
-    ? `<div class="row g-3 mb-3">${stateItems.join("")}</div>`
-    : "";
 
   const header = `
     <div class="detail-card mb-3">
@@ -1074,29 +1088,28 @@ function openDetail(r){
         <div class="small text-muted mb-1"><i class="bi bi-exclamation-octagon"></i> Factores</div>
         <div class="factors-wrap">${factorChips(r)}</div>
       </div>
-      ${statesBlock}
     </div>
   `;
 
   const tabs = [];
-  const movTab = renderMovRepTab(mov);
+  const movTab = renderMovRepTab(mov, tabSummaries["mov"]);
   if(movTab){
     tabs.push({ id:"mov", title:"Movimiento repetitivo", content: movTab });
   }
   if(POSTURA_HEADERS.length){
-    const posturaTab = renderPosturaTab(postura);
+    const posturaTab = renderPosturaTab(postura, tabSummaries["postura"]);
     if(posturaTab){
       tabs.push({ id:"postura", title:"Postura estática", content: posturaTab });
     }
   }
   if(MMC_LEV_STRUCTURE){
-    const levTab = renderMmcLevTab(mmcLev);
+    const levTab = renderMmcLevTab(mmcLev, tabSummaries["mmc-lev"]);
     if(levTab){
       tabs.push({ id:"mmc-lev", title:"MMC Levantamiento/Descenso", content: levTab });
     }
   }
   if(MMC_EMP_STRUCTURE){
-    const empTab = renderMmcEmpTab(mmcEmp);
+    const empTab = renderMmcEmpTab(mmcEmp, tabSummaries["mmc-emp"]);
     if(empTab){
       tabs.push({ id:"mmc-emp", title:"MMC Empuje/Arrastre", content: empTab });
     }
