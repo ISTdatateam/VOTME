@@ -811,16 +811,17 @@ function renderPosturaTab(post, summaryCards){
     return `<div class="postura-tab">${summaryBlock}<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> No se pudo interpretar la hoja “Postura estática”.</div></div>`;
   }
   const row = post.rowArr || [];
+  const planBlock = renderPosturaPlan(structure.plan, row);
   const acceptable = structure.acceptable.map(sec => renderPosturaSection(sec, row)).filter(Boolean).join("") ||
     `<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> Sin respuestas para condición aceptable.</div>`;
   const critical = structure.critical.map(sec => renderPosturaSection(sec, row)).filter(Boolean).join("") ||
     `<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> Sin respuestas para condición crítica.</div>`;
-  const plan = renderPosturaPlan(structure.plan, row);
 
   return `
     <div class="postura-tab">
       ${summaryBlock}
-      <div class="group-block">
+      ${planBlock ? `<div class="group-block">${planBlock}</div>` : ""}
+      <div class="group-block${planBlock ? " mt-4" : ""}">
         <div class="group-title text-uppercase small text-muted fw-bold mb-2">Condición Aceptable</div>
         ${acceptable}
       </div>
@@ -828,7 +829,6 @@ function renderPosturaTab(post, summaryCards){
         <div class="group-title text-uppercase small text-muted fw-bold mb-2">Condición Crítica</div>
         ${critical}
       </div>
-      ${plan ? `<div class="group-block mt-4">${plan}</div>` : ""}
     </div>
   `;
 }
@@ -891,18 +891,19 @@ function renderMmcTab(data, structure, sheetLabel, summaryCards){
   }
 
   const row = data.rowArr || [];
+  const planBlock = renderMmcPlan(structure.plan, row);
   const acceptableBlock = renderMmcSection("Preguntas evaluadas", structure.acceptable, row) ||
     `<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> Sin respuestas para condición aceptable.</div>`;
   const criticalBlock = structure.critical && structure.critical.length
     ? (renderMmcSection("Preguntas evaluadas", structure.critical, row) ||
         `<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> Sin respuestas para condición crítica.</div>`)
     : "";
-  const planBlock = renderMmcPlan(structure.plan, row);
 
   return `
     <div class="postura-tab">
       ${summaryBlock}
-      <div class="group-block">
+      ${planBlock ? `<div class="group-block">${planBlock}</div>` : ""}
+      <div class="group-block${planBlock ? " mt-4" : ""}">
         <div class="group-title text-uppercase small text-muted fw-bold mb-2">Condición Aceptable</div>
         ${acceptableBlock}
       </div>
@@ -911,7 +912,6 @@ function renderMmcTab(data, structure, sheetLabel, summaryCards){
           <div class="group-title text-uppercase small text-muted fw-bold mb-2">Condición Crítica</div>
           ${criticalBlock}
         </div>` : ""}
-      ${planBlock ? `<div class="group-block mt-4">${planBlock}</div>` : ""}
     </div>
   `;
 }
