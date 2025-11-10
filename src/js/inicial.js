@@ -41,6 +41,14 @@ let POSTURA_MAP = Object.create(null); // key -> {rowObj, rowArr, condAceptable,
 let POSTURA_HEADERS = [];
 let POSTURA_LOOKUP = Object.create(null); // normalized header -> [indexes]
 
+let MMC_LEV_MAP = Object.create(null); // key -> {rowObj, rowArr, condAceptable, condCritica}
+let MMC_LEV_HEADERS = [];
+let MMC_LEV_STRUCTURE = null;
+
+let MMC_EMP_MAP = Object.create(null); // key -> {rowObj, rowArr, condAceptable, condCritica}
+let MMC_EMP_HEADERS = [];
+let MMC_EMP_STRUCTURE = null;
+
 let FILTERS = { area: "", puesto: "", tarea: "", factorKey: "", factorState: "" };
 let STATE = { page:1, perPage:10, pageMax:1 };
 
@@ -203,6 +211,14 @@ function pickPosturaSheet(wb){
   const cand = wb.SheetNames.find(n => /postura|estatic/i.test(n.toLowerCase()));
   return cand || null;
 }
+function pickMmcLevSheet(wb){
+  const names = wb.SheetNames || [];
+  return names.find(n => /mmc/i.test(n) && /lev|desc/i.test(n.toLowerCase())) || null;
+}
+function pickMmcEmpSheet(wb){
+  const names = wb.SheetNames || [];
+  return names.find(n => /mmc/i.test(n) && (/emp/i.test(n.toLowerCase()) || /arras/i.test(n.toLowerCase()))) || null;
+}
 
 function processWorkbook(arrayBuffer){
   const wb = XLSX.read(arrayBuffer, { type: "array" });
@@ -348,6 +364,90 @@ function processWorkbook(arrayBuffer){
               condCritica: r[idxCrit] ?? ""
             };
           }
+        }
+      }
+    }
+  }
+
+  /* Hoja MMC Levantamiento/Descenso */
+  MMC_LEV_MAP = Object.create(null);
+  MMC_LEV_HEADERS = [];
+  MMC_LEV_STRUCTURE = null;
+  const mmcLevSheet = pickMmcLevSheet(wb);
+  if(mmcLevSheet){
+    const wsLev = wb.Sheets[mmcLevSheet];
+    if(wsLev){
+      const rows2d = XLSX.utils.sheet_to_json(wsLev, { header:1, defval:"" });
+      if(rows2d.length){
+        const headerRow =
+          (rows2d[1] && rows2d[1].some(x => String(x||"").trim() !== "")) ? rows2d[1] :
+          rows2d[0];
+        const headers = headerRow.map(h => String(h||""));
+        MMC_LEV_HEADERS = headers;
+
+        const idxArea   = findHeaderIndex(headers, ["área de trabajo","area de trabajo"]) ?? 1;
+        const idxPuesto = findHeaderIndex(headers, ["puesto de trabajo","puesto"]) ?? 2;
+        const idxTarea  = findHeaderIndex(headers, ["tareas del puesto","tarea"]) ?? 3;
+        const idxAcept  = findHeaderIndex(headers, ["condición aceptable","condicion aceptable"]);
+        const idxCrit   = findHeaderIndex(headers, ["condición crítica","condicion critica"]);
+        MMC_LEV_STRUCTURE = buildMmcStructure(headers, idxAcept, idxCrit);
+
+        for(let i=2;i<rows2d.length;i++){
+          const r = rows2d[i] || [];
+          const area   = r[idxArea]   ?? "";
+          const puesto = r[idxPuesto] ?? "";
+          const tarea  = r[idxTarea]  ?? "";
+          if(!(area||puesto||tarea)) continue;
+          const key = keyTriple(area, puesto, tarea);
+
+          MMC_LEV_MAP[key] = {
+            rowArr: r.slice(),
+            rowObj: objectFromRow(headers, r),
+            condAceptable: (idxAcept != null) ? (r[idxAcept] ?? "") : "",
+            condCritica: (idxCrit != null) ? (r[idxCrit] ?? "") : ""
+          };
+        }
+      }
+    }
+  }
+
+  /* Hoja MMC Empuje/Arrastre */
+  MMC_EMP_MAP = Object.create(null);
+  MMC_EMP_HEADERS = [];
+  MMC_EMP_STRUCTURE = null;
+  const mmcEmpSheet = pickMmcEmpSheet(wb);
+  if(mmcEmpSheet){
+    const wsEmp = wb.Sheets[mmcEmpSheet];
+    if(wsEmp){
+      const rows2d = XLSX.utils.sheet_to_json(wsEmp, { header:1, defval:"" });
+      if(rows2d.length){
+        const headerRow =
+          (rows2d[1] && rows2d[1].some(x => String(x||"").trim() !== "")) ? rows2d[1] :
+          rows2d[0];
+        const headers = headerRow.map(h => String(h||""));
+        MMC_EMP_HEADERS = headers;
+
+        const idxArea   = findHeaderIndex(headers, ["área de trabajo","area de trabajo"]) ?? 1;
+        const idxPuesto = findHeaderIndex(headers, ["puesto de trabajo","puesto"]) ?? 2;
+        const idxTarea  = findHeaderIndex(headers, ["tareas del puesto","tarea"]) ?? 3;
+        const idxAcept  = findHeaderIndex(headers, ["condición aceptable","condicion aceptable"]);
+        const idxCrit   = findHeaderIndex(headers, ["condición crítica","condicion critica"]);
+        MMC_EMP_STRUCTURE = buildMmcStructure(headers, idxAcept, idxCrit);
+
+        for(let i=2;i<rows2d.length;i++){
+          const r = rows2d[i] || [];
+          const area   = r[idxArea]   ?? "";
+          const puesto = r[idxPuesto] ?? "";
+          const tarea  = r[idxTarea]  ?? "";
+          if(!(area||puesto||tarea)) continue;
+          const key = keyTriple(area, puesto, tarea);
+
+          MMC_EMP_MAP[key] = {
+            rowArr: r.slice(),
+            rowObj: objectFromRow(headers, r),
+            condAceptable: (idxAcept != null) ? (r[idxAcept] ?? "") : "",
+            condCritica: (idxCrit != null) ? (r[idxCrit] ?? "") : ""
+          };
         }
       }
     }
@@ -500,6 +600,14 @@ function getMovRepFor(r){
 function getPosturaFor(r){
   const k = keyTriple(r.B, r.C, r.D);
   return POSTURA_MAP[k] || null;
+}
+function getMmcLevFor(r){
+  const k = keyTriple(r.B, r.C, r.D);
+  return MMC_LEV_MAP[k] || null;
+}
+function getMmcEmpFor(r){
+  const k = keyTriple(r.B, r.C, r.D);
+  return MMC_EMP_MAP[k] || null;
 }
 function classifyMovRep(p, w){
   const s = `${String(p||"")} ${String(w||"")}`;
@@ -718,6 +826,95 @@ function renderPosturaTab(post){
   `;
 }
 
+function buildMmcStructure(headers, idxAcept, idxCrit){
+  if(!headers || idxAcept == null) return null;
+  const list = headers.map(h => String(h || ""));
+  const infoEnd = 8; // columnas A..I contienen datos base
+
+  const acceptable = [];
+  for(let i = infoEnd + 1; i < idxAcept; i++){
+    const label = list[i];
+    if(!label || !label.trim()) continue;
+    acceptable.push({ label, index: i });
+  }
+
+  const critical = [];
+  if(idxCrit != null){
+    for(let i = idxAcept + 1; i < idxCrit; i++){
+      const label = list[i];
+      if(!label || !label.trim()) continue;
+      critical.push({ label, index: i });
+    }
+  }
+
+  const plan = [];
+  const planStart = (idxCrit != null ? idxCrit + 1 : idxAcept + 1);
+  for(let i = planStart; i < list.length; i++){
+    const label = list[i];
+    if(!label || !label.trim()) continue;
+    plan.push({ label, index: i });
+  }
+
+  return {
+    acceptable,
+    acceptableResultIndex: idxAcept,
+    critical,
+    criticalResultIndex: idxCrit,
+    plan
+  };
+}
+
+function renderMmcSection(title, entries, row){
+  if(!entries || !entries.length) return "";
+  return renderPosturaSection({ title, entries }, row);
+}
+
+function renderMmcPlan(entries, row){
+  if(!entries || !entries.length) return "";
+  return renderPosturaPlan(entries, row);
+}
+
+function renderMmcTab(data, structure, sheetLabel){
+  if(!structure){
+    return `<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> No se pudo interpretar la hoja “${escapeHtml(sheetLabel)}”.</div>`;
+  }
+  if(!data){
+    return `<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> No se encontraron coincidencias en la hoja “${escapeHtml(sheetLabel)}”.</div>`;
+  }
+
+  const row = data.rowArr || [];
+  const acceptableBlock = renderMmcSection("Preguntas evaluadas", structure.acceptable, row) ||
+    `<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> Sin respuestas para condición aceptable.</div>`;
+  const criticalBlock = structure.critical && structure.critical.length
+    ? (renderMmcSection("Preguntas evaluadas", structure.critical, row) ||
+        `<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> Sin respuestas para condición crítica.</div>`)
+    : "";
+  const planBlock = renderMmcPlan(structure.plan, row);
+
+  return `
+    <div class="postura-tab">
+      <div class="group-block">
+        <div class="group-title text-uppercase small text-muted fw-bold mb-2">Condición Aceptable</div>
+        ${acceptableBlock}
+      </div>
+      ${structure.critical && structure.critical.length ? `
+        <div class="group-block mt-4">
+          <div class="group-title text-uppercase small text-muted fw-bold mb-2">Condición Crítica</div>
+          ${criticalBlock}
+        </div>` : ""}
+      ${planBlock ? `<div class="group-block mt-4">${planBlock}</div>` : ""}
+    </div>
+  `;
+}
+
+function renderMmcLevTab(data){
+  return renderMmcTab(data, MMC_LEV_STRUCTURE, "MMC Levantamiento/Descenso");
+}
+
+function renderMmcEmpTab(data){
+  return renderMmcTab(data, MMC_EMP_STRUCTURE, "MMC Empuje/Arrastre");
+}
+
 /* ======= HTML Tarjeta + Modal ======= */
 function cardHtml(r, idx){
   const mov = getMovRepFor(r);
@@ -835,6 +1032,8 @@ function renderMovRepTab(mov){
 function openDetail(r){
   const mov = getMovRepFor(r);
   const postura = getPosturaFor(r);
+  const mmcLev = MMC_LEV_STRUCTURE ? getMmcLevFor(r) : null;
+  const mmcEmp = MMC_EMP_STRUCTURE ? getMmcEmpFor(r) : null;
   const status = classifyMovRep(mov?.P, mov?.W);
 
   const stateItems = [];
@@ -843,6 +1042,14 @@ function openDetail(r){
   if(POSTURA_HEADERS.length){
     stateItems.push(renderStateCard("Postura estática · Condición aceptable", postura?.condAceptable, "bi-person-standing"));
     stateItems.push(renderStateCard("Postura estática · Condición crítica", postura?.condCritica, "bi-exclamation-octagon"));
+  }
+  if(MMC_LEV_STRUCTURE){
+    stateItems.push(renderStateCard("MMC Levantamiento/Descenso · Condición aceptable", mmcLev?.condAceptable, "bi-box-seam"));
+    stateItems.push(renderStateCard("MMC Levantamiento/Descenso · Condición crítica", mmcLev?.condCritica, "bi-exclamation-octagon-fill"));
+  }
+  if(MMC_EMP_STRUCTURE){
+    stateItems.push(renderStateCard("MMC Empuje/Arrastre · Condición aceptable", mmcEmp?.condAceptable, "bi-cart-check"));
+    stateItems.push(renderStateCard("MMC Empuje/Arrastre · Condición crítica", mmcEmp?.condCritica, "bi-exclamation-triangle-fill"));
   }
   const statesBlock = stateItems.length
     ? `<div class="row g-3 mb-3">${stateItems.join("")}</div>`
@@ -880,6 +1087,18 @@ function openDetail(r){
     const posturaTab = renderPosturaTab(postura);
     if(posturaTab){
       tabs.push({ id:"postura", title:"Postura estática", content: posturaTab });
+    }
+  }
+  if(MMC_LEV_STRUCTURE){
+    const levTab = renderMmcLevTab(mmcLev);
+    if(levTab){
+      tabs.push({ id:"mmc-lev", title:"MMC Levantamiento/Descenso", content: levTab });
+    }
+  }
+  if(MMC_EMP_STRUCTURE){
+    const empTab = renderMmcEmpTab(mmcEmp);
+    if(empTab){
+      tabs.push({ id:"mmc-emp", title:"MMC Empuje/Arrastre", content: empTab });
     }
   }
 
