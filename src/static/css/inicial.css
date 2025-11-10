@@ -184,13 +184,17 @@ body{
 
 /* Variantes SI/NO (chips de factores) */
 .factor-chip.is-yes{
-  background:var(--bg);
-  border-color:color-mix(in srgb, var(--accent) 30%, #fff 70%);
-  color:color-mix(in srgb, var(--accent) 80%, #000 20%);
+  background:#fee2e2;
+  border-color:#fecaca;
+  color:#b91c1c;
 }
-.factor-chip.is-yes .state{ background:var(--accent); }
-.factor-chip.is-no { background:#fff; border-color:#e5e7eb; color:#64748b; }
-.factor-chip.is-no .state{ background:#94a3b8; }
+.factor-chip.is-yes .state{ background:#dc2626; }
+.factor-chip.is-no {
+  background:#dcfce7;
+  border-color:#bbf7d0;
+  color:#166534;
+}
+.factor-chip.is-no .state{ background:#16a34a; }
 
 /* Títulos “Tabla II / VI” (usa w-100 + small + text-muted en tu HTML) */
 .card-ficha .w-100.small.text-muted{
