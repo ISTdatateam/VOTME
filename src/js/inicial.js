@@ -1021,7 +1021,7 @@ function cardHtml(r, idx){
             </div>
           </div>
 
-          <div class="advanced-block mt-3">
+          <div class="mb-2">
             <div class="small text-muted mb-1">
               <i class="bi bi-clipboard2-pulse"></i> Identificación avanzada
             </div>
