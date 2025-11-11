@@ -667,7 +667,7 @@ function renderStateCard(title, value, icon){
   const display = valText ? escapeHtml(valText) : '<span class="text-muted">Sin dato</span>';
   const iconHtml = icon ? `<i class="bi ${icon}"></i>` : '';
   return `
-    <div class="col-sm-6 col-xl-4">
+    <div class="col-12 col-md-6">
       <div class="state-card ${cls}">
         <div class="sc-head">${iconHtml}<span>${escapeHtml(title)}</span></div>
         <div class="sc-body fw-bold">${display}</div>
@@ -678,7 +678,7 @@ function renderStateCard(title, value, icon){
 
 function renderTabSummary(cards){
   if(!cards || !cards.length) return "";
-  return `<div class="tab-summary row g-3">${cards.join("")}</div>`;
+  return `<div class="tab-summary row row-cols-1 row-cols-md-2 g-3">${cards.join("")}</div>`;
 }
 
 function getPosturaStructure(){
@@ -986,11 +986,8 @@ function cardHtml(r, idx){
   }
   const hasAdvanced = summaryCards.length > 0;
   const summaryBlock = hasAdvanced
-    ? `<div class="advanced-grid tab-summary row g-3">${summaryCards.join("")}</div>`
+    ? `<div class="advanced-grid tab-summary row row-cols-1 row-cols-md-2 g-3">${summaryCards.join("")}</div>`
     : `<div class="alert alert-light border text-muted mb-0"><i class="bi bi-info-circle"></i> No hay información de identificación avanzada disponible.</div>`;
-  const noteBlock = hasAdvanced
-    ? `<p class="advanced-note small text-muted fst-italic mt-2 mb-0">*Nota: Sus similares se encuentran en “Ver detalles”; se deben ir detallando en su forma (Cond. Aceptable - Cond. Crítica) para su respectiva valoración.</p>`
-    : "";
 
   return `
     <div class="col" data-idx="${idx}">
@@ -1029,7 +1026,6 @@ function cardHtml(r, idx){
               <i class="bi bi-clipboard2-pulse"></i> Identificación avanzada
             </div>
             ${summaryBlock}
-            ${noteBlock}
           </div>
 
           <div class="d-flex justify-content-end mt-3">
