@@ -297,7 +297,14 @@ body{
 .hl-risk { background:linear-gradient(0deg, rgba(220,38,38,.12), rgba(220,38,38,.12)); border:1px solid rgba(220,38,38,.28); border-radius:.85rem; }
 .hl-neutral{ background:#f8fafc; border:1px solid var(--border); border-radius:.85rem; }
 .state-card{ padding:.85rem 1rem; }
-.state-card .sc-head{ font-weight:900; margin-bottom:.25rem; display:flex; align-items:center; gap:.45rem; }
+.state-card .sc-head{
+  font-weight:900;
+  margin-bottom:.25rem;
+  display:flex;
+  align-items:center;
+  gap:.45rem;
+  font-size:.82rem;
+}
 .hl-ok  .sc-head{ color:var(--ok); }
 .hl-warn .sc-head{ color:var(--warn); }
 .hl-risk .sc-head{ color:var(--risk); }
