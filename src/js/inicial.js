@@ -36,6 +36,8 @@ const RISKS = [
 let RAW_ROWS = [];
 let MOVREP_MAP = Object.create(null); // key -> {P, W, rowObj, rowArr}
 let MOVREP_HEADERS = [];
+let MOVREP_TOP_HEADERS = [];
+let MOVREP_STRUCTURE = null;
 
 let POSTURA_MAP = Object.create(null); // key -> {rowObj, rowArr, condAceptable, condCritica}
 let POSTURA_HEADERS = [];
@@ -43,10 +45,12 @@ let POSTURA_LOOKUP = Object.create(null); // normalized header -> [indexes]
 
 let MMC_LEV_MAP = Object.create(null); // key -> {rowObj, rowArr, condAceptable, condCritica}
 let MMC_LEV_HEADERS = [];
+let MMC_LEV_TOP_HEADERS = [];
 let MMC_LEV_STRUCTURE = null;
 
 let MMC_EMP_MAP = Object.create(null); // key -> {rowObj, rowArr, condAceptable, condCritica}
 let MMC_EMP_HEADERS = [];
+let MMC_EMP_TOP_HEADERS = [];
 let MMC_EMP_STRUCTURE = null;
 
 let FILTERS = { area: "", puesto: "", tarea: "", factorKey: "", factorState: "" };
@@ -98,6 +102,112 @@ function objectFromRow(headers, row){
     o[key] = row[i]??"";
   });
   return o;
+}
+
+function normalizeHeaderText(value){
+  return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function computeTopHeaders(rows2d, headerRow){
+  const length = headerRow.length;
+  const out = new Array(length).fill("");
+  if(rows2d && rows2d.length){
+    const topRow = rows2d[0] || [];
+    let hasContent = false;
+    for(let i=0;i<length;i++){
+      const raw = (i < topRow.length) ? topRow[i] : "";
+      const normalized = normalizeHeaderText(raw);
+      if(normalized){
+        out[i] = normalized;
+        hasContent = true;
+      }
+    }
+    if(!hasContent){
+      for(let i=0;i<length;i++){
+        out[i] = normalizeHeaderText(headerRow[i]);
+      }
+    }
+  }else{
+    for(let i=0;i<length;i++){
+      out[i] = normalizeHeaderText(headerRow[i]);
+    }
+  }
+  return out;
+}
+
+function fillDownHeaders(topHeaders, length){
+  const out = new Array(length).fill("");
+  let last = "";
+  for(let i=0;i<length;i++){
+    const raw = (topHeaders && i < topHeaders.length) ? topHeaders[i] : "";
+    const normalized = normalizeHeaderText(raw);
+    if(normalized){
+      last = normalized;
+      out[i] = normalized;
+    }else{
+      out[i] = last;
+    }
+  }
+  return out;
+}
+
+function groupColumnsByTop(headers, topHeaders, startIdx, endIdx){
+  if(!headers || !headers.length) return [];
+  const length = headers.length;
+  const start = Math.max(0, startIdx|0);
+  const end = Math.min(length, endIdx == null ? length : endIdx);
+  if(start >= end) return [];
+  const filledTop = fillDownHeaders(topHeaders, length);
+  const sections = [];
+  let current = null;
+  for(let i=start;i<end;i++){
+    const label = normalizeHeaderText(headers[i]);
+    if(!label) continue;
+    const normLabel = toLowerNoAccents(label);
+    if(normLabel.includes("condicion aceptable") || normLabel.includes("condicion critica") || normLabel.includes("resultado")){
+      continue;
+    }
+    const top = filledTop[i] || "";
+    const sectionTitle = top || "Preguntas";
+    if(!current || current.title !== sectionTitle){
+      current = { title: sectionTitle, entries: [] };
+      sections.push(current);
+    }
+    current.entries.push({ label, index: i });
+  }
+  return sections.filter(section => section.entries.length);
+}
+
+function collectPlanEntries(headers, startIdx){
+  if(!headers || !headers.length) return [];
+  const out = [];
+  for(let i=Math.max(0, startIdx|0); i<headers.length; i++){
+    const label = normalizeHeaderText(headers[i]);
+    if(!label) continue;
+    const normLabel = toLowerNoAccents(label);
+    if(normLabel.includes("resultado")) continue;
+    out.push({ label, index: i });
+  }
+  return out;
+}
+
+function buildGroupedStructure(headers, topHeaders, infoEnd, idxAcept, idxCrit){
+  if(!headers || !headers.length) return null;
+  const baseStart = Math.max(0, (infoEnd ?? 0) + 1);
+  const acceptLimit = idxAcept != null ? idxAcept : headers.length;
+  const acceptableGroups = groupColumnsByTop(headers, topHeaders, baseStart, acceptLimit);
+  const criticalStart = idxAcept != null ? idxAcept + 1 : acceptLimit;
+  const criticalLimit = idxCrit != null ? idxCrit : headers.length;
+  const criticalGroups = groupColumnsByTop(headers, topHeaders, criticalStart, criticalLimit);
+  const planStart = idxCrit != null ? idxCrit + 1 : criticalLimit;
+  const planEntries = collectPlanEntries(headers, planStart);
+  return {
+    acceptableGroups,
+    criticalGroups,
+    acceptableResultIndex: idxAcept,
+    criticalResultIndex: idxCrit,
+    planEntries
+  };
 }
 
 /* ======= Bootstrap ======= */
@@ -270,6 +380,8 @@ function processWorkbook(arrayBuffer){
   /* Hoja Movimiento repetitivo */
   MOVREP_MAP = Object.create(null);
   MOVREP_HEADERS = [];
+  MOVREP_TOP_HEADERS = [];
+  MOVREP_STRUCTURE = null;
   const movSheetName = pickMovRepSheet(wb);
   if(movSheetName){
     const wsMov = wb.Sheets[movSheetName];
@@ -282,6 +394,7 @@ function processWorkbook(arrayBuffer){
           rows2d[0];
         const headers = headerRow.map(h => String(h||""));
         MOVREP_HEADERS = headers;
+        MOVREP_TOP_HEADERS = computeTopHeaders(rows2d, headers);
 
         // Índices de llaves (por texto y con fallback B,C,D)
         const idxArea   = findHeaderIndex(headers, ["área de trabajo","area de trabajo","área","area"]) ?? 1;
@@ -289,8 +402,13 @@ function processWorkbook(arrayBuffer){
         const idxTarea  = findHeaderIndex(headers, ["tareas del puesto","tareas del puesto de trabajo","tarea"]) ?? 3;
 
         // Detecta P y W por texto; fallback a índices correctos (A=0 → P=15, W=22)
-        const idxP = findHeaderIndex(headers, ["condición aceptable","condicion aceptable"]) ?? 15;
-        const idxW = findHeaderIndex(headers, ["condición crítica","condicion critica"]) ?? 22;
+        let idxP = findIndexInsensitive(headers, ["condición aceptable","condicion aceptable"]);
+        if(idxP == null) idxP = findHeaderIndex(headers, ["condición aceptable","condicion aceptable"]);
+        if(idxP == null) idxP = 15;
+        let idxW = findIndexInsensitive(headers, ["condición crítica","condicion critica"]);
+        if(idxW == null) idxW = findHeaderIndex(headers, ["condición crítica","condicion critica"]);
+        if(idxW == null) idxW = 22;
+        MOVREP_STRUCTURE = buildGroupedStructure(headers, MOVREP_TOP_HEADERS, 8, idxP, idxW);
 
         for(let i=2;i<rows2d.length;i++){ // datos desde fila 3 (0-based: 2)
           const r = rows2d[i] || [];
@@ -372,6 +490,7 @@ function processWorkbook(arrayBuffer){
   /* Hoja MMC Levantamiento/Descenso */
   MMC_LEV_MAP = Object.create(null);
   MMC_LEV_HEADERS = [];
+  MMC_LEV_TOP_HEADERS = [];
   MMC_LEV_STRUCTURE = null;
   const mmcLevSheet = pickMmcLevSheet(wb);
   if(mmcLevSheet){
@@ -384,13 +503,16 @@ function processWorkbook(arrayBuffer){
           rows2d[0];
         const headers = headerRow.map(h => String(h||""));
         MMC_LEV_HEADERS = headers;
+        MMC_LEV_TOP_HEADERS = computeTopHeaders(rows2d, headers);
 
         const idxArea   = findHeaderIndex(headers, ["área de trabajo","area de trabajo"]) ?? 1;
         const idxPuesto = findHeaderIndex(headers, ["puesto de trabajo","puesto"]) ?? 2;
         const idxTarea  = findHeaderIndex(headers, ["tareas del puesto","tarea"]) ?? 3;
-        const idxAcept  = findHeaderIndex(headers, ["condición aceptable","condicion aceptable"]);
-        const idxCrit   = findHeaderIndex(headers, ["condición crítica","condicion critica"]);
-        MMC_LEV_STRUCTURE = buildMmcStructure(headers, idxAcept, idxCrit);
+        let idxAcept  = findIndexInsensitive(headers, ["condición aceptable","condicion aceptable"]);
+        if(idxAcept == null) idxAcept = findHeaderIndex(headers, ["condición aceptable","condicion aceptable"]);
+        let idxCrit   = findIndexInsensitive(headers, ["condición crítica","condicion critica"]);
+        if(idxCrit == null) idxCrit = findHeaderIndex(headers, ["condición crítica","condicion critica"]);
+        MMC_LEV_STRUCTURE = buildMmcStructure(headers, MMC_LEV_TOP_HEADERS, idxAcept, idxCrit);
 
         for(let i=2;i<rows2d.length;i++){
           const r = rows2d[i] || [];
@@ -414,6 +536,7 @@ function processWorkbook(arrayBuffer){
   /* Hoja MMC Empuje/Arrastre */
   MMC_EMP_MAP = Object.create(null);
   MMC_EMP_HEADERS = [];
+  MMC_EMP_TOP_HEADERS = [];
   MMC_EMP_STRUCTURE = null;
   const mmcEmpSheet = pickMmcEmpSheet(wb);
   if(mmcEmpSheet){
@@ -426,13 +549,16 @@ function processWorkbook(arrayBuffer){
           rows2d[0];
         const headers = headerRow.map(h => String(h||""));
         MMC_EMP_HEADERS = headers;
+        MMC_EMP_TOP_HEADERS = computeTopHeaders(rows2d, headers);
 
         const idxArea   = findHeaderIndex(headers, ["área de trabajo","area de trabajo"]) ?? 1;
         const idxPuesto = findHeaderIndex(headers, ["puesto de trabajo","puesto"]) ?? 2;
         const idxTarea  = findHeaderIndex(headers, ["tareas del puesto","tarea"]) ?? 3;
-        const idxAcept  = findHeaderIndex(headers, ["condición aceptable","condicion aceptable"]);
-        const idxCrit   = findHeaderIndex(headers, ["condición crítica","condicion critica"]);
-        MMC_EMP_STRUCTURE = buildMmcStructure(headers, idxAcept, idxCrit);
+        let idxAcept  = findIndexInsensitive(headers, ["condición aceptable","condicion aceptable"]);
+        if(idxAcept == null) idxAcept = findHeaderIndex(headers, ["condición aceptable","condicion aceptable"]);
+        let idxCrit   = findIndexInsensitive(headers, ["condición crítica","condicion critica"]);
+        if(idxCrit == null) idxCrit = findHeaderIndex(headers, ["condición crítica","condicion critica"]);
+        MMC_EMP_STRUCTURE = buildMmcStructure(headers, MMC_EMP_TOP_HEADERS, idxAcept, idxCrit);
 
         for(let i=2;i<rows2d.length;i++){
           const r = rows2d[i] || [];
@@ -794,6 +920,15 @@ function renderPosturaSection(section, row){
   `;
 }
 
+function renderGroupedSections(sections, row){
+  if(!sections || !sections.length) return "";
+  return sections.map((section) => {
+    if(!section || !section.entries || !section.entries.length) return "";
+    const title = section.title && section.title.trim() ? section.title.trim() : "Preguntas";
+    return renderPosturaSection({ title, entries: section.entries }, row);
+  }).filter(Boolean).join("");
+}
+
 function renderPosturaPlan(entries, row){
   if(!entries || !entries.length) return "";
   const items = entries.map((entry) => {
@@ -854,47 +989,9 @@ function renderPosturaTab(post, summaryCards){
   `;
 }
 
-function buildMmcStructure(headers, idxAcept, idxCrit){
+function buildMmcStructure(headers, topHeaders, idxAcept, idxCrit){
   if(!headers || idxAcept == null) return null;
-  const list = headers.map(h => String(h || ""));
-  const infoEnd = 8; // columnas A..I contienen datos base
-
-  const acceptable = [];
-  for(let i = infoEnd + 1; i < idxAcept; i++){
-    const label = list[i];
-    if(!label || !label.trim()) continue;
-    acceptable.push({ label, index: i });
-  }
-
-  const critical = [];
-  if(idxCrit != null){
-    for(let i = idxAcept + 1; i < idxCrit; i++){
-      const label = list[i];
-      if(!label || !label.trim()) continue;
-      critical.push({ label, index: i });
-    }
-  }
-
-  const plan = [];
-  const planStart = (idxCrit != null ? idxCrit + 1 : idxAcept + 1);
-  for(let i = planStart; i < list.length; i++){
-    const label = list[i];
-    if(!label || !label.trim()) continue;
-    plan.push({ label, index: i });
-  }
-
-  return {
-    acceptable,
-    acceptableResultIndex: idxAcept,
-    critical,
-    criticalResultIndex: idxCrit,
-    plan
-  };
-}
-
-function renderMmcSection(title, entries, row){
-  if(!entries || !entries.length) return "";
-  return renderPosturaSection({ title, entries }, row);
+  return buildGroupedStructure(headers, topHeaders, 8, idxAcept, idxCrit);
 }
 
 function renderMmcPlan(entries, row){
@@ -902,26 +999,73 @@ function renderMmcPlan(entries, row){
   return renderPosturaPlan(entries, row);
 }
 
-function renderMmcTab(data, structure, sheetLabel, summaryCards){
+function renderMmcLegacy(data, headers, summaryBlock){
+  const rows = [];
+  if(Array.isArray(data?.rowArr) && headers && headers.length){
+    const infoEnd = 8;
+    for(let i = infoEnd + 1; i < headers.length; i++){
+      const label = headers[i] || `Col${i+1}`;
+      if(!label || !label.trim()) continue;
+      const value = data.rowArr[i];
+      if(String(value ?? "").trim() === "") continue;
+      rows.push([label, value]);
+    }
+  }else if(data?.rowObj){
+    for(const [k,v] of Object.entries(data.rowObj)){
+      if(String(v ?? "").trim() === "") continue;
+      rows.push([k, v]);
+    }
+  }
+  if(!rows.length){
+    return `<div class="postura-tab">${summaryBlock}<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> Sin respuestas registradas en esta hoja.</div></div>`;
+  }
+  const bodyHtml = rows.map(([k,v]) => {
+    const rowCls = classifyRowHighlight(k, v);
+    return `<tr class="${rowCls}"><th>${escapeHtml(k)}</th><td>${escapeHtml(String(v ?? ""))}</td></tr>`;
+  }).join("");
+  return `
+    <div class="postura-tab">
+      ${summaryBlock}
+      <div class="table-like">
+        <table>
+          <thead><tr><th style="min-width:260px">Pregunta</th><th>Respuesta</th></tr></thead>
+          <tbody>${bodyHtml}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderMmcTab(data, structure, headers, sheetLabel, summaryCards){
   const summaryBlock = renderTabSummary(summaryCards);
   if(!structure){
-    return `<div class="postura-tab">${summaryBlock}<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> No se pudo interpretar la hoja “${escapeHtml(sheetLabel)}”.</div></div>`;
+    return `<div class="postura-tab">${summaryBlock}<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i>No se pudo interpretar la hoja “${escapeHtml(sheetLabel)}”.</div></div>`;
   }
   if(!data){
-    return `<div class="postura-tab">${summaryBlock}<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> No se encontraron coincidencias en la hoja “${escapeHtml(sheetLabel)}”.</div></div>`;
+    return `<div class="postura-tab">${summaryBlock}<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i>No se encontraron coincidencias en la hoja “${escapeHtml(sheetLabel)}”.</div></div>`;
+  }
+  if(!Array.isArray(data.rowArr)){
+    return renderMmcLegacy(data, headers, summaryBlock);
   }
 
-  const row = data.rowArr || [];
+  const row = data.rowArr;
   const skipCritical = shouldSkipCritical(data.condAceptable);
-  const planBlock = renderMmcPlan(structure.plan, row);
-  const acceptableBlock = renderMmcSection("Preguntas evaluadas", structure.acceptable, row) ||
+  const planBlock = renderMmcPlan(structure.planEntries, row);
+  const acceptableBlock = renderGroupedSections(structure.acceptableGroups, row) ||
     `<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> Sin respuestas para condición aceptable.</div>`;
-  const criticalBlock = skipCritical
+  const hasCriticalGroups = Array.isArray(structure.criticalGroups) && structure.criticalGroups.length;
+  const criticalContent = skipCritical
     ? `<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> No se evaluó la condición crítica (N/A).</div>`
-    : (structure.critical && structure.critical.length
-      ? (renderMmcSection("Preguntas evaluadas", structure.critical, row) ||
+    : (hasCriticalGroups
+      ? (renderGroupedSections(structure.criticalGroups, row) ||
           `<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> Sin respuestas para condición crítica.</div>`)
-      : "");
+      : `<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> Sin preguntas para condición crítica.</div>`);
+  const criticalBlock = (hasCriticalGroups || skipCritical)
+    ? `<div class="group-block mt-4">
+        <div class="group-title text-uppercase small text-muted fw-bold mb-2">Condición Crítica</div>
+        ${criticalContent}
+      </div>`
+    : "";
 
   return `
     <div class="postura-tab">
@@ -931,21 +1075,17 @@ function renderMmcTab(data, structure, sheetLabel, summaryCards){
         <div class="group-title text-uppercase small text-muted fw-bold mb-2">Condición Aceptable</div>
         ${acceptableBlock}
       </div>
-      ${(structure.critical && structure.critical.length) || skipCritical ? `
-        <div class="group-block mt-4">
-          <div class="group-title text-uppercase small text-muted fw-bold mb-2">Condición Crítica</div>
-          ${criticalBlock}
-        </div>` : ""}
+      ${criticalBlock}
     </div>
   `;
 }
 
 function renderMmcLevTab(data, summaryCards){
-  return renderMmcTab(data, MMC_LEV_STRUCTURE, "MMC Levantamiento/Descenso", summaryCards);
+  return renderMmcTab(data, MMC_LEV_STRUCTURE, MMC_LEV_HEADERS, "MMC Levantamiento/Descenso", summaryCards);
 }
 
 function renderMmcEmpTab(data, summaryCards){
-  return renderMmcTab(data, MMC_EMP_STRUCTURE, "MMC Empuje/Arrastre", summaryCards);
+  return renderMmcTab(data, MMC_EMP_STRUCTURE, MMC_EMP_HEADERS, "MMC Empuje/Arrastre", summaryCards);
 }
 
 /* ======= HTML Tarjeta + Modal ======= */
@@ -1045,46 +1185,38 @@ const SKIP_LABELS = new Set([
   "mujeres","col2","col3","col4","col5","col6","col7","col8","col9","n°","n."
 ]);
 
-function renderMovRepTab(mov, summaryCards){
-  const summaryBlock = renderTabSummary(summaryCards);
-  if(!mov || !(mov.rowArr || mov.rowObj)){
-    return `<div class="postura-tab">${summaryBlock}<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> No se encontraron detalles coincidentes en la hoja “Movimiento repetitivo”.</div></div>`;
-  }
-
+function renderMovRepLegacy(mov, summaryBlock){
   const rows = [];
-  const skipCritical = shouldSkipCritical(mov.P);
-  if(mov.rowArr && Array.isArray(MOVREP_HEADERS) && MOVREP_HEADERS.length){
+  const skipCritical = shouldSkipCritical(mov?.P);
+  if(Array.isArray(mov?.rowArr) && Array.isArray(MOVREP_HEADERS) && MOVREP_HEADERS.length){
     for(let i=0;i<MOVREP_HEADERS.length;i++){
       if(SKIP_IDX.has(i)) continue;
       const label = MOVREP_HEADERS[i] || `Col${i+1}`;
       if(SKIP_LABELS.has(toLowerNoAccents(label))) continue;
       const normLabel = toLowerNoAccents(label);
       let val = mov.rowArr[i];
-      if(skipCritical && normLabel.includes("condicion critica")){
-        val = "N/A";
+      if(skipCritical && normLabel.includes('condicion critica')){
+        val = 'N/A';
       }
-      if(String(val ?? "").trim() === "") continue;
+      if(String(val ?? '').trim() === '') continue;
       rows.push([label, val]);
     }
-  }else{
-    for(const [k,v] of Object.entries(mov.rowObj || {})){
-      if(String(v ?? "").trim() === "") continue;
+  }else if(mov?.rowObj){
+    for(const [k,v] of Object.entries(mov.rowObj)){
+      if(String(v ?? '').trim() === '') continue;
       if(SKIP_LABELS.has(toLowerNoAccents(k))) continue;
       const normLabel = toLowerNoAccents(k);
-      const value = (skipCritical && normLabel.includes("condicion critica")) ? "N/A" : v;
+      const value = (skipCritical && normLabel.includes('condicion critica')) ? 'N/A' : v;
       rows.push([k, value]);
     }
   }
-
   if(!rows.length){
     return `<div class="postura-tab">${summaryBlock}<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> Sin respuestas registradas en esta hoja.</div></div>`;
   }
-
   const bodyHtml = rows.map(([k,v]) => {
     const rowCls = classifyRowHighlight(k, v);
     return `<tr class="${rowCls}"><th>${escapeHtml(k)}</th><td>${escapeHtml(String(v))}</td></tr>`;
-  }).join("");
-
+  }).join('');
   return `
     <div class="postura-tab">
       ${summaryBlock}
@@ -1094,6 +1226,47 @@ function renderMovRepTab(mov, summaryCards){
           <tbody>${bodyHtml}</tbody>
         </table>
       </div>
+    </div>
+  `;
+}
+
+function renderMovRepTab(mov, summaryCards){
+  const summaryBlock = renderTabSummary(summaryCards);
+  if(!mov || !(mov.rowArr || mov.rowObj)){
+    return `<div class="postura-tab">${summaryBlock}<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i>No se encontraron detalles coincidentes en la hoja “Movimiento repetitivo”.</div></div>`;
+  }
+  if(!MOVREP_STRUCTURE || !Array.isArray(mov.rowArr)){
+    return renderMovRepLegacy(mov, summaryBlock);
+  }
+
+  const row = mov.rowArr;
+  const skipCritical = shouldSkipCritical(mov.P);
+  const planBlock = renderPosturaPlan(MOVREP_STRUCTURE.planEntries, row);
+  const acceptableBlock = renderGroupedSections(MOVREP_STRUCTURE.acceptableGroups, row) ||
+    `<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> Sin respuestas para condición aceptable.</div>`;
+  const hasCriticalGroups = Array.isArray(MOVREP_STRUCTURE.criticalGroups) && MOVREP_STRUCTURE.criticalGroups.length;
+  const criticalContent = skipCritical
+    ? `<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> No se evaluó la condición crítica (N/A).</div>`
+    : (hasCriticalGroups
+      ? (renderGroupedSections(MOVREP_STRUCTURE.criticalGroups, row) ||
+          `<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> Sin respuestas para condición crítica.</div>`)
+      : `<div class="alert alert-light border text-muted"><i class="bi bi-info-circle"></i> Sin preguntas para condición crítica.</div>`);
+  const criticalBlock = (hasCriticalGroups || skipCritical)
+    ? `<div class="group-block mt-4">
+        <div class="group-title text-uppercase small text-muted fw-bold mb-2">Condición Crítica</div>
+        ${criticalContent}
+      </div>`
+    : '';
+
+  return `
+    <div class="postura-tab">
+      ${summaryBlock}
+      ${planBlock ? `<div class="group-block">${planBlock}</div>` : ''}
+      <div class="group-block${planBlock ? ' mt-4' : ''}">
+        <div class="group-title text-uppercase small text-muted fw-bold mb-2">Condición Aceptable</div>
+        ${acceptableBlock}
+      </div>
+      ${criticalBlock}
     </div>
   `;
 }
