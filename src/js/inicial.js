@@ -1022,8 +1022,8 @@ function cardHtml(r, idx){
           </div>
 
           <div class="advanced-block mt-3">
-            <div class="advanced-title small text-muted text-uppercase fw-bold">
-              <div class="small text-muted mb-1"><i class="bi bi-exclamation-octagon"></i> Identificación avanzada
+            <div class="small text-muted mb-1">
+              <i class="bi bi-clipboard2-pulse"></i> Identificación avanzada
             </div>
             ${summaryBlock}
           </div>
