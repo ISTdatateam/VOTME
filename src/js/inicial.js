@@ -1114,8 +1114,6 @@ function openDetail(r){
   const mmcLev = mmcLevRaw ? { ...mmcLevRaw, condCritica: mmcLevCritical } : null;
   const mmcEmp = mmcEmpRaw ? { ...mmcEmpRaw, condCritica: mmcEmpCritical } : null;
 
-  const status = classifyMovRep(mov?.P, mov?.W);
-
   const factorPresent = {
     mov: isFactorPresent(r, 'J'),
     postura: isFactorPresent(r, 'K'),
@@ -1153,11 +1151,6 @@ function openDetail(r){
           <h5 class="mb-1">${escapeHtml(r.D || "-")}</h5>
           <div class="mb-1"><i class="bi bi-person-badge"></i> <strong>Puesto:</strong> ${escapeHtml(r.C || "-")}</div>
           <div class="mb-1"><i class="bi bi-geo-alt"></i> <strong>Área:</strong> ${escapeHtml(r.B || "-")}</div>
-        </div>
-        <div class="d-flex flex-column align-items-end gap-2">
-          <span class="status-pill ${status.cls}" style="font-size:1rem;">
-            <i class="bi bi-activity"></i> ${status.label}
-          </span>
         </div>
       </div>
       <div class="mt-3">
