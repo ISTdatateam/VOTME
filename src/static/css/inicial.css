@@ -200,6 +200,25 @@ body{
 }
 .factor-chip.is-no .state{ background:#16a34a; }
 
+.advanced-block{
+  border:1px solid var(--chip-br);
+  background:#f8f5ff;
+  border-radius:var(--radius);
+  padding:1rem;
+}
+.advanced-title{
+  display:flex;
+  align-items:center;
+  gap:.45rem;
+  color:color-mix(in srgb, var(--ist-purple) 45%, var(--muted) 55%);
+  margin-bottom:.75rem;
+}
+.advanced-title i{font-size:1rem;}
+.advanced-grid{margin-bottom:.75rem;}
+.advanced-block .tab-summary{margin-bottom:.75rem;}
+.advanced-block > .alert{margin-bottom:.75rem;}
+.advanced-note{color:color-mix(in srgb, var(--muted) 85%, #000 15%);}
+
 /* Títulos “Tabla II / VI” (usa w-100 + small + text-muted en tu HTML) */
 .card-ficha .w-100.small.text-muted{
   text-transform:uppercase;letter-spacing:.02em;font-weight:800;margin-top:.25rem;

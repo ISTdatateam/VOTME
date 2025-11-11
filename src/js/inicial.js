@@ -667,7 +667,7 @@ function renderStateCard(title, value, icon){
   const display = valText ? escapeHtml(valText) : '<span class="text-muted">Sin dato</span>';
   const iconHtml = icon ? `<i class="bi ${icon}"></i>` : '';
   return `
-    <div class="col-md-6 col-xl-3">
+    <div class="col-sm-6 col-xl-4">
       <div class="state-card ${cls}">
         <div class="sc-head">${iconHtml}<span>${escapeHtml(title)}</span></div>
         <div class="sc-body fw-bold">${display}</div>
@@ -959,11 +959,7 @@ function cardHtml(r, idx){
   const mmcEmpRaw = MMC_EMP_STRUCTURE ? getMmcEmpFor(r) : null;
   const mmcEmpCritical = normalizedCriticalValue(mmcEmpRaw?.condAceptable, mmcEmpRaw?.condCritica);
   const status = classifyMovRep(mov?.P, movCritical);
-  const criticalTone = classifyCriticalState(movCritical);
-  const criticalClass = criticalTone ? ` critical-pill-${criticalTone}` : "";
-  const criticalHtml = mov
-    ? `<span class="pill critical-pill${criticalClass}"><strong>Condición Crítica:</strong> ${escapeHtml(movCritical ?? "")}</span>`
-    : `<span class="pill">Hoja Mov. repetitivo: sin coincidencia</span>`;
+  const cardState = status?.cls ? status.cls.replace("status-", "") : "";
   const factorPresent = {
     mov: isFactorPresent(r, 'J'),
     postura: isFactorPresent(r, 'K'),
@@ -988,13 +984,17 @@ function cardHtml(r, idx){
     addSummary(renderStateCard("MMC Empuje/Arrastre · Condición aceptable", mmcEmpRaw?.condAceptable, "bi-cart-check"));
     addSummary(renderStateCard("MMC Empuje/Arrastre · Condición crítica", mmcEmpCritical, "bi-exclamation-triangle-fill"));
   }
-  const summaryBlock = summaryCards.length
-    ? `<div class="mt-3"><div class="small text-muted text-uppercase fw-bold mb-2">Factores evaluados</div><div class="tab-summary row g-3">${summaryCards.join("")}</div></div>`
+  const hasAdvanced = summaryCards.length > 0;
+  const summaryBlock = hasAdvanced
+    ? `<div class="advanced-grid tab-summary row g-3">${summaryCards.join("")}</div>`
+    : `<div class="alert alert-light border text-muted mb-0"><i class="bi bi-info-circle"></i> No hay información de identificación avanzada disponible.</div>`;
+  const noteBlock = hasAdvanced
+    ? `<p class="advanced-note small text-muted fst-italic mt-2 mb-0">*Nota: Sus similares se encuentran en “Ver detalles”; se deben ir detallando en su forma (Cond. Aceptable - Cond. Crítica) para su respectiva valoración.</p>`
     : "";
 
   return `
     <div class="col" data-idx="${idx}">
-      <div class="card card-ficha h-100 shadow-sm">
+      <div class="card card-ficha h-100 shadow-sm"${cardState ? ` data-state="${cardState}"` : ""}>
         <div class="card-body">
           <div class="d-flex align-items-start justify-content-between">
             <div>
@@ -1024,20 +1024,13 @@ function cardHtml(r, idx){
             </div>
           </div>
 
-          <hr>
-
-          <!-- Estado P/W -->
-          <div class="d-flex flex-wrap align-items-center gap-2 mt-2 mb-2">
-            <div class="w-100 small text-muted">
-              IDENTIFICACIÓN AVANZADA – Trabajo Repetitivo de Miembros Superiores
+          <div class="advanced-block mt-3">
+            <div class="advanced-title small text-muted text-uppercase fw-bold">
+              <i class="bi bi-clipboard2-pulse"></i> Identificación avanzada
             </div>
-            <span class="status-pill ${status.cls}" title="Estado según hoja Movimiento repetitivo (P/W)">
-              <i class="bi bi-activity"></i> Condición Aceptable: ${status.label}
-            </span>
-            ${criticalHtml}
+            ${summaryBlock}
+            ${noteBlock}
           </div>
-
-          ${summaryBlock}
 
           <div class="d-flex justify-content-end mt-3">
             <button type="button" class="btn btn-primary btn-sm btn-open" data-open>
