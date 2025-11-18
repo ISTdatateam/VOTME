@@ -116,6 +116,21 @@ body{
 .pill.critical-pill-warn{background:#fff7ed;color:#9a3412;border-color:#fed7aa;}
 .pill.critical-pill-bad{background:#fef2f2;color:#b91c1c;border-color:#fecaca;}
 
+/* ===== Etiqueta acción avanzada + Evaluaciones iniciales ===== */
+.action-label{display:flex;gap:.65rem;align-items:flex-start;padding:.55rem .75rem;border-radius:12px;border:1px solid var(--border);background:#f8fafc;}
+.action-label .action-icon{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;background:#e2e8f0;color:#334155;font-size:1.05rem;}
+.action-label.action-ok{border-color:rgba(22,163,74,.25);background:rgba(22,163,74,.08);} .action-label.action-ok .action-icon{background:rgba(22,163,74,.14);color:var(--ok);}
+.action-label.action-warn{border-color:rgba(217,119,6,.25);background:rgba(217,119,6,.08);} .action-label.action-warn .action-icon{background:rgba(217,119,6,.16);color:var(--warn);}
+.action-label.action-bad{border-color:rgba(220,38,38,.28);background:rgba(220,38,38,.1);} .action-label.action-bad .action-icon{background:rgba(220,38,38,.18);color:var(--risk);}
+
+.initial-eval-box{border:1px solid var(--border);background:#f8fafc;border-radius:12px;padding:.75rem;}
+.iev-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.65rem;}
+.iev-item{background:#fff;border:1px solid var(--border);border-radius:10px;padding:.5rem .65rem;}
+.iev-label{font-size:.85rem;color:#64748b;font-weight:600;}
+.iev-value{font-weight:800;color:#1f2937;font-size:1rem;}
+.iev-note{margin-top:.35rem;font-size:.86rem;color:#475569;display:flex;align-items:flex-start;gap:.4rem;}
+.iev-meta{margin-top:.4rem;font-size:.82rem;color:#475569;}
+
 /* ====== Compatibilidad: colores “Vigente / Vencido / Próximo” ====== */
 #areasList .pill.pill-ok{
   background:rgba(22,163,74,.12);
