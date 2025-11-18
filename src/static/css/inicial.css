@@ -350,7 +350,13 @@ body{
 /* Tabla legible con thead sticky */
 .table-like{border:1px solid var(--border);border-radius:12px;overflow:auto;background:#fff;}
 .table-like table{width:100%;border-collapse:separate;border-spacing:0;}
-.table-like th,.table-like td{padding:.65rem .8rem;border-bottom:1px solid #f1f5f9;vertical-align:top;}
+.table-like th,
+.table-like td{
+  padding:.65rem .8rem;
+  border-bottom:1px solid #f1f5f9;
+  vertical-align:top;
+  text-align:left;
+}
 .table-like thead th{position:sticky;top:0;background:#f8fafc;z-index:1;font-weight:800;}
 .table-like tbody tr:nth-child(odd) td{background:#fcfcff;}
 
