@@ -35,6 +35,13 @@ const RISKS = [
   { key: 'P', label: COLS.P, css: 'f-vhb' },
 ];
 
+const DEFAULT_INITIAL_EVAL_PATHS = [
+  "../source/FAENA-INSPECCION AVE MORTECINA Metodo Art tool.xlsx",
+  "/source/FAENA-INSPECCION AVE MORTECINA Metodo Art tool.xlsx",
+  "./FAENA-INSPECCION AVE MORTECINA Metodo Art tool.xlsx"
+];
+const DEFAULT_INITIAL_EVAL_DIR = "../source/ev_ini";
+
 let RAW_ROWS = [];
 let MOVREP_MAP = Object.create(null); // key -> {P, W, rowObj, rowArr}
 let MOVREP_HEADERS = [];
@@ -54,6 +61,8 @@ let MMC_EMP_MAP = Object.create(null); // key -> {rowObj, rowArr, condAceptable,
 let MMC_EMP_HEADERS = [];
 let MMC_EMP_TOP_HEADERS = [];
 let MMC_EMP_STRUCTURE = null;
+
+let INITIAL_EVALS_MAP = Object.create(null); // key -> { area, puesto, tarea, ... }
 
 let FILTERS = { area: "", puesto: "", tarea: "", factorKey: "", factorState: "" };
 let STATE = { page:1, perPage:10, pageMax:1 };
@@ -176,6 +185,69 @@ function computeTopHeaders(rows2d, headerRow){
   return out;
 }
 
+function normalizeInitialEvalPath(baseDir, entry){
+  if(!entry) return null;
+  const trimmed = String(entry).trim();
+  if(!trimmed) return null;
+  if(/^(https?:)?\/\//i.test(trimmed) || trimmed.startsWith("/") || trimmed.startsWith("../") || trimmed.startsWith("./")){
+    return trimmed;
+  }
+  const base = String(baseDir || DEFAULT_INITIAL_EVAL_DIR || "").replace(/\/+$/, "");
+  return `${base}/${trimmed}`;
+}
+
+async function fetchInitialEvalManifest(baseDir, fileName){
+  const results = [];
+  const base = String(baseDir || DEFAULT_INITIAL_EVAL_DIR || "").replace(/\/+$/, "");
+  try{
+    const res = await fetch(`${base}/${fileName}?v=${Date.now()}`, { cache:"no-store" });
+    if(!res.ok) return results;
+    const data = await res.json();
+    const entries = Array.isArray(data?.files) ? data.files : Array.isArray(data) ? data : [];
+    for(const entry of entries){
+      const normalized = normalizeInitialEvalPath(base, entry);
+      if(normalized && /\.xls[x]?$/i.test(normalized)){
+        results.push(normalized);
+      }
+    }
+  }catch(e){
+    console.warn("No se pudo leer manifest.json de ev_ini", e);
+  }
+  return results;
+}
+
+async function probeInitialEvalDirectory(baseDir){
+  const found = new Set();
+  const manifestNames = ["manifest.json", "index.json", "files.json"];
+  for(const name of manifestNames){
+    const entries = await fetchInitialEvalManifest(baseDir, name);
+    for(const entry of entries){
+      found.add(entry);
+    }
+    if(found.size) return Array.from(found);
+  }
+
+  const base = String(baseDir || DEFAULT_INITIAL_EVAL_DIR || "").replace(/\/+$/, "");
+  try{
+    const res = await fetch(`${base}/?v=${Date.now()}`, { cache:"no-store" });
+    if(res.ok){
+      const html = await res.text();
+      const matches = Array.from(html.matchAll(/href\s*=\s*["']([^"']+\.(?:xlsx|xls))["']/gi));
+      for(const m of matches){
+        const raw = m[1];
+        const normalized = normalizeInitialEvalPath(base, raw);
+        if(normalized){
+          found.add(normalized);
+        }
+      }
+    }
+  }catch(e){
+    console.warn("No se pudo listar carpeta ev_ini", e);
+  }
+
+  return Array.from(found);
+}
+
 function fillDownHeaders(topHeaders, length){
   const out = new Array(length).fill("");
   let last = "";
@@ -251,6 +323,193 @@ function buildGroupedStructure(headers, topHeaders, infoEnd, idxAcept, idxCrit){
   };
 }
 
+/* ======= Evaluaciones iniciales (HojaResultado) ======= */
+function normalizeEvalText(v){
+  return toLowerNoAccents(String(v ?? ""));
+}
+
+function findLabelPosition(rows, patterns){
+  const pats = (patterns || []).map(p => normalizeEvalText(p));
+  for(let r=0;r<rows.length;r++){
+    const row = rows[r] || [];
+    for(let c=0;c<row.length;c++){
+      const cell = normalizeEvalText(row[c]);
+      if(!cell) continue;
+      if(pats.some(p => cell.includes(p))) return { r, c };
+    }
+  }
+  return null;
+}
+
+function pickNearbyValue(rows, pos){
+  if(!pos) return "";
+  const candidates = [
+    [pos.r, pos.c + 1], [pos.r, pos.c + 2], [pos.r, pos.c + 3],
+    [pos.r + 1, pos.c], [pos.r + 1, pos.c + 1], [pos.r + 1, pos.c + 2],
+    [pos.r + 2, pos.c], [pos.r + 2, pos.c + 1]
+  ];
+  for(const [r,c] of candidates){
+    const value = rows?.[r]?.[c];
+    if(value != null && String(value).trim() !== "") return String(value).trim();
+  }
+  return "";
+}
+
+function pickValueBelow(rows, pos){
+  if(!pos) return "";
+  const row = rows?.[pos.r + 1] || [];
+  const sameCol = row[pos.c];
+  if(sameCol != null && String(sameCol).trim() !== "") return String(sameCol).trim();
+  const nextCol = row[pos.c + 1];
+  if(nextCol != null && String(nextCol).trim() !== "") return String(nextCol).trim();
+  return "";
+}
+
+function numbersFromRow(row){
+  if(!Array.isArray(row)) return [];
+  const nums = [];
+  for(const cell of row){
+    if(cell == null || cell === "") continue;
+    const num = parseFloat(String(cell).replace(",", "."));
+    if(!Number.isNaN(num)) nums.push(num);
+  }
+  return nums;
+}
+
+function findNumbersByLabel(rows, labels){
+  const pos = findLabelPosition(rows, labels);
+  if(!pos) return [];
+  return numbersFromRow(rows[pos.r] || []);
+}
+
+function findLongestSiblingText(rows, pos){
+  if(!pos) return "";
+  const row = rows[pos.r] || [];
+  let best = "";
+  for(let i=0;i<row.length;i++){
+    if(i === pos.c) continue;
+    const txt = String(row[i] ?? "").trim();
+    if(txt && txt.length > best.length) best = txt;
+  }
+  return best;
+}
+
+function parseInitialEvalSheet(rows, sourceName){
+  const areaPos = findLabelPosition(rows, ["area de trabajo"]);
+  const puestoPos = findLabelPosition(rows, ["nombre puesto", "puesto trabajo"]);
+  const tareaPos = findLabelPosition(rows, ["nombre tarea"]);
+
+  const area = pickNearbyValue(rows, areaPos);
+  const puesto = pickNearbyValue(rows, puestoPos);
+  const tarea = pickNearbyValue(rows, tareaPos);
+  if(!(area || puesto || tarea)) return null;
+
+  const evaluador = pickNearbyValue(rows, findLabelPosition(rows, ["nombre evaluador"]));
+  const fecha = pickNearbyValue(rows, findLabelPosition(rows, ["fecha"]));
+  const duracion = pickNearbyValue(rows, findLabelPosition(rows, ["duracion tarea", "duración tarea"]));
+  const descripcion = pickValueBelow(rows, findLabelPosition(rows, ["descripcion de la tarea", "descripción de la tarea"]));
+  const herramientaPos = findLabelPosition(rows, ["herramienta manual"]);
+  const herramienta = pickNearbyValue(rows, herramientaPos);
+  const comentarios = findLongestSiblingText(rows, herramientaPos);
+
+  const puntajeTareaList = findNumbersByLabel(rows, ["puntaje de la tarea"]);
+  const puntajeExpoList = findNumbersByLabel(rows, ["puntaje de exposicion", "puntaje de exposición"]);
+
+  const puntajeTarea = puntajeTareaList.length ? Math.max(...puntajeTareaList) : null;
+  const puntajeExpo = puntajeExpoList.length ? Math.max(...puntajeExpoList) : null;
+
+  return {
+    area,
+    puesto,
+    tarea,
+    evaluador,
+    fecha,
+    duracion,
+    descripcion,
+    herramienta,
+    comentarios,
+    puntajeTarea,
+    puntajeExpo,
+    source: sourceName || "HojaResultado"
+  };
+}
+
+function parseInitialEvalWorkbook(buffer, sourceName){
+  try{
+    const wb = XLSX.read(buffer, { type: "array" });
+    const sheet = wb.Sheets['HojaResultado'] || wb.Sheets[wb.SheetNames?.[0]];
+    if(!sheet) return [];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header:1, defval:"" });
+    const info = parseInitialEvalSheet(rows, sourceName);
+    return info ? [info] : [];
+  }catch(e){
+    console.warn("No se pudo leer HojaResultado", sourceName, e);
+    return [];
+  }
+}
+
+async function resolveInitialEvalPaths(){
+  const baseDir = window.INITIAL_EVAL_DIR || DEFAULT_INITIAL_EVAL_DIR;
+  const paths = new Set();
+
+  const configured = Array.isArray(window.INITIAL_EVAL_FILES) && window.INITIAL_EVAL_FILES.length
+    ? window.INITIAL_EVAL_FILES
+    : [];
+  for(const raw of configured){
+    const normalized = normalizeInitialEvalPath(baseDir, raw);
+    if(normalized){
+      paths.add(normalized);
+    }
+  }
+
+  const autoDiscovered = await probeInitialEvalDirectory(baseDir);
+  for(const entry of autoDiscovered){
+    paths.add(entry);
+  }
+
+  if(!paths.size){
+    for(const p of DEFAULT_INITIAL_EVAL_PATHS){
+      const normalized = normalizeInitialEvalPath(baseDir, p) || p;
+      paths.add(normalized);
+    }
+  }
+
+  return Array.from(paths);
+}
+
+async function loadInitialEvaluations(){
+  INITIAL_EVALS_MAP = Object.create(null);
+  const configured = await resolveInitialEvalPaths();
+  const tried = new Set();
+  for(const rawPath of configured){
+    const path = encodeURI(rawPath);
+    if(tried.has(path)) continue;
+    tried.add(path);
+    try{
+      const res = await fetch(`${path}?v=${Date.now()}`, { cache:"no-store" });
+      if(!res.ok) continue;
+      const buf = await res.arrayBuffer();
+      const entries = parseInitialEvalWorkbook(buf, rawPath);
+      for(const ev of entries){
+        const key = keyTriple(ev.area, ev.puesto, ev.tarea);
+        if(!INITIAL_EVALS_MAP[key]){
+          INITIAL_EVALS_MAP[key] = ev;
+        }
+      }
+    }catch(e){
+      console.warn("No se pudo cargar evaluación inicial", rawPath, e);
+    }
+  }
+  if(RAW_ROWS.length && Object.keys(INITIAL_EVALS_MAP).length){
+    render();
+  }
+}
+
+function getInitialEvalFor(r){
+  const key = keyTriple(r.B, r.C, r.D);
+  return INITIAL_EVALS_MAP[key] || null;
+}
+
 /* ======= Bootstrap ======= */
 document.addEventListener("DOMContentLoaded", () => {
   const loadedFromCache = attemptLoadCachedWorkbook();
@@ -258,6 +517,7 @@ document.addEventListener("DOMContentLoaded", () => {
     attemptFetchDefault();
   }
   wireUI();
+  loadInitialEvaluations();
 });
 
 /* ======= UI ======= */
@@ -680,6 +940,54 @@ function classifyRowHighlight(label, value){
   return "";
 }
 
+function normalizeAcceptableState(value){
+  const text = toLowerNoAccents(String(value ?? ""));
+  if(!text.trim()) return "";
+  if(text.includes("no acept")) return "no";
+  if(text.includes("acept")) return "si";
+  return "";
+}
+
+function normalizeCriticalDecision(value){
+  const text = toLowerNoAccents(String(value ?? ""));
+  if(!text.trim() || text === "n/a" || text === "na") return "";
+  if(/no\s*crit/.test(text)) return "no";
+  if(/crit/.test(text)) return "si";
+  return "";
+}
+
+function buildAdvancedActionLabel(entries){
+  if(!Array.isArray(entries) || !entries.length) return null;
+  let hasData = false;
+  let anyNoAcceptable = false;
+  let anyCritical = false;
+  for(const ent of entries){
+    if(!ent) continue;
+    const acc = normalizeAcceptableState(ent.acceptable);
+    const crit = normalizeCriticalDecision(ent.critical);
+    if(acc || crit) hasData = true;
+    if(acc === "no") anyNoAcceptable = true;
+    if(crit === "si") anyCritical = true;
+  }
+  if(!hasData) return null;
+  if (anyNoAcceptable) {
+    return {
+      severity: anyCritical ? "bad" : "warn",
+      title: anyCritical
+        ? "Identificación avanzada trabajo repetitivo: Critico"
+        : "Identificación avanzada trabajo repetitivo: No Critico",
+      message: anyCritical
+        ? "Intervenir tarea 90 dias y re-identificar."
+        : "Se requiere realizar identificación inicial."
+    };
+  }
+  return {
+    severity: "ok",
+    title: "Identificación avanzada trabajo repetitivo: Aceptable",
+    message: "Se requiere reidentificación en 3 años."
+  };
+}
+
 function isFactorPresent(row, key){
   if(!row) return false;
   const raw = String(row[key] ?? "").trim();
@@ -846,6 +1154,96 @@ function renderStateCard(title, value, icon){
         <div class="sc-head">${iconHtml}<span>${escapeHtml(title)}</span></div>
         <div class="sc-body fw-bold">${display}</div>
       </div>
+    </div>
+  `;
+}
+
+function renderAdvancedActionLabel(info){
+  if(!info) return "";
+  const ico = info.severity === "bad" ? "bi-exclamation-octagon-fill"
+    : info.severity === "warn" ? "bi-exclamation-triangle-fill"
+    : "bi-patch-check-fill";
+  return `
+    <div class="action-label action-${info.severity}">
+      <div class="action-icon"><i class="bi ${ico}"></i></div>
+      <div>
+        <div class="fw-semibold">${escapeHtml(info.title)}</div>
+        <div class="small text-muted">${escapeHtml(info.message)}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderInitialEvalSnippet(ev){
+  if(!ev) return "";
+  const parts = [];
+  if(ev.puntajeExpo != null){
+    parts.push(`<div class="iev-item"><div class="iev-label">Puntaje exposición total</div><div class="iev-value">${escapeHtml(ev.puntajeExpo)}</div></div>`);
+  }
+  if(ev.puntajeTarea != null){
+    parts.push(`<div class="iev-item"><div class="iev-label">Puntaje tarea</div><div class="iev-value">${escapeHtml(ev.puntajeTarea)}</div></div>`);
+  }
+  if(ev.duracion){
+    parts.push(`<div class="iev-item"><div class="iev-label">Duración tarea</div><div class="iev-value">${escapeHtml(ev.duracion)}</div></div>`);
+  }
+  const infoLine = [];
+  if(ev.fecha) infoLine.push(`Fecha ${escapeHtml(ev.fecha)}`);
+  if(ev.evaluador) infoLine.push(`Evaluador/a: ${escapeHtml(ev.evaluador)}`);
+  const footer = infoLine.length ? `<div class="iev-meta">${infoLine.join(" · ")}</div>` : "";
+  const desc = ev.comentarios || ev.herramienta || ev.descripcion;
+  const descHtml = desc ? `<div class="iev-note"><i class="bi bi-info-circle"></i> ${escapeHtml(desc)}</div>` : "";
+
+  if(!parts.length && !descHtml) return "";
+
+  return `
+    <div class="initial-eval-box">
+      <div class="small text-muted mb-1"><i class="bi bi-clipboard-check"></i> Evaluación inicial (HojaResultado)</div>
+      <div class="iev-grid">${parts.join("")}</div>
+      ${descHtml}
+      ${footer}
+    </div>
+  `;
+}
+
+function renderInitialEvalDetail(ev){
+  if(!ev) return "";
+  const parts = [];
+  if(ev.puntajeExpo != null){
+    parts.push(`<div class="iev-item"><div class="iev-label">Puntaje exposición total</div><div class="iev-value">${escapeHtml(ev.puntajeExpo)}</div></div>`);
+  }
+  if(ev.puntajeTarea != null){
+    parts.push(`<div class="iev-item"><div class="iev-label">Puntaje tarea</div><div class="iev-value">${escapeHtml(ev.puntajeTarea)}</div></div>`);
+  }
+  if(ev.duracion){
+    parts.push(`<div class="iev-item"><div class="iev-label">Duración tarea</div><div class="iev-value">${escapeHtml(ev.duracion)}</div></div>`);
+  }
+  const rows = [];
+  if(ev.descripcion) rows.push(["Descripción de la tarea", ev.descripcion]);
+  if(ev.herramienta) rows.push(["Herramienta", ev.herramienta]);
+  if(ev.comentarios && ev.comentarios !== ev.descripcion && ev.comentarios !== ev.herramienta){
+    rows.push(["Observaciones", ev.comentarios]);
+  }
+  const infoLine = [];
+  if(ev.fecha) infoLine.push(`Fecha ${escapeHtml(ev.fecha)}`);
+  if(ev.evaluador) infoLine.push(`Evaluador/a: ${escapeHtml(ev.evaluador)}`);
+  if(ev.source) infoLine.push(`Fuente: ${escapeHtml(ev.source)}`);
+  const meta = infoLine.length ? `<div class="iev-meta">${infoLine.join(" · ")}</div>` : "";
+  const rowsHtml = rows.length ? `
+    <div class="table-like table-compact mt-3">
+      <table>
+        <tbody>
+          ${rows.map(([k,v]) => `<tr><th style="min-width:220px">${escapeHtml(k)}</th><td>${escapeHtml(v)}</td></tr>`).join("")}
+        </tbody>
+      </table>
+    </div>
+  ` : "";
+
+  return `
+    <div class="detail-card">
+      <h6 class="section-title mb-2"><i class="bi bi-clipboard-check"></i> Evaluación inicial (HojaResultado)</h6>
+      ${parts.length ? `<div class="iev-grid">${parts.join("")}</div>` : ""}
+      ${rowsHtml}
+      ${meta}
     </div>
   `;
 }
@@ -1154,6 +1552,13 @@ function cardHtml(r, idx){
     mmcLev: isFactorPresent(r, 'L'),
     mmcEmp: isFactorPresent(r, 'M')
   };
+  const advancedEntries = [];
+  if(factorPresent.mov) advancedEntries.push({ acceptable: mov?.P, critical: movCritical });
+  if(factorPresent.postura) advancedEntries.push({ acceptable: posturaRaw?.condAceptable, critical: posturaCritical });
+  if(factorPresent.mmcLev) advancedEntries.push({ acceptable: mmcLevRaw?.condAceptable, critical: mmcLevCritical });
+  if(factorPresent.mmcEmp) advancedEntries.push({ acceptable: mmcEmpRaw?.condAceptable, critical: mmcEmpCritical });
+  const actionLabel = buildAdvancedActionLabel(advancedEntries);
+  const actionHtml = renderAdvancedActionLabel(actionLabel);
   const summaryCards = [];
   const addSummary = (html) => { if(html) summaryCards.push(html); };
   if(factorPresent.mov){
@@ -1176,6 +1581,8 @@ function cardHtml(r, idx){
   const summaryBlock = hasAdvanced
     ? `<div class="advanced-grid tab-summary row row-cols-1 row-cols-md-2 g-3">${summaryCards.join("")}</div>`
     : `<div class="alert alert-light border text-muted mb-0"><i class="bi bi-info-circle"></i> No hay información de identificación avanzada disponible.</div>`;
+  const initialEval = getInitialEvalFor(r);
+  const initialEvalHtml = renderInitialEvalSnippet(initialEval);
 
   return `
     <div class="col" data-idx="${idx}">
@@ -1193,6 +1600,8 @@ function cardHtml(r, idx){
 
           <div class="mb-1"><i class="bi bi-person-badge"></i> <strong>Puesto:</strong> ${escapeHtml(r.C || "-")}</div>
           <div class="mb-2"><i class="bi bi-geo-alt"></i> <strong>Área:</strong> ${escapeHtml(r.B || "-")}</div>
+
+          ${actionHtml ? `<div class="mb-2">${actionHtml}</div>` : ""}
 
           <!-- (1) Fila de horario/HE -->
           <div class="row g-2 small mb-2">
@@ -1215,6 +1624,8 @@ function cardHtml(r, idx){
             </div>
             ${summaryBlock}
           </div>
+
+          ${initialEvalHtml ? `<div class="mb-2">${initialEvalHtml}</div>` : ""}
 
           <div class="d-flex justify-content-end mt-3">
             <button type="button" class="btn btn-primary btn-sm btn-open" data-open>
@@ -1341,6 +1752,15 @@ function openDetail(r){
     mmcLev: isFactorPresent(r, 'L'),
     mmcEmp: isFactorPresent(r, 'M')
   };
+  const advancedEntries = [];
+  if(factorPresent.mov) advancedEntries.push({ acceptable: mov?.P, critical: mov?.W });
+  if(factorPresent.postura) advancedEntries.push({ acceptable: postura?.condAceptable, critical: postura?.condCritica });
+  if(factorPresent.mmcLev) advancedEntries.push({ acceptable: mmcLev?.condAceptable, critical: mmcLev?.condCritica });
+  if(factorPresent.mmcEmp) advancedEntries.push({ acceptable: mmcEmp?.condAceptable, critical: mmcEmp?.condCritica });
+  const actionLabel = buildAdvancedActionLabel(advancedEntries);
+  const actionHtml = renderAdvancedActionLabel(actionLabel);
+  const initialEval = getInitialEvalFor(r);
+  const initialEvalBlock = renderInitialEvalDetail(initialEval);
 
   const tabSummaries = Object.create(null);
   const addSummary = (tabId, cardHtml) => {
@@ -1370,16 +1790,17 @@ function openDetail(r){
         <div>
           <div class="small text-muted">Tarea</div>
           <h5 class="mb-1">${escapeHtml(r.D || "-")}</h5>
-          <div class="mb-1"><i class="bi bi-person-badge"></i> <strong>Puesto:</strong> ${escapeHtml(r.C || "-")}</div>
-          <div class="mb-1"><i class="bi bi-geo-alt"></i> <strong>Área:</strong> ${escapeHtml(r.B || "-")}</div>
-        </div>
-      </div>
-      <div class="mt-3">
-        <div class="small text-muted mb-1"><i class="bi bi-exclamation-octagon"></i> Factores</div>
-        <div class="factors-wrap">${factorChips(r)}</div>
+        <div class="mb-1"><i class="bi bi-person-badge"></i> <strong>Puesto:</strong> ${escapeHtml(r.C || "-")}</div>
+        <div class="mb-1"><i class="bi bi-geo-alt"></i> <strong>Área:</strong> ${escapeHtml(r.B || "-")}</div>
       </div>
     </div>
-  `;
+    <div class="mt-3">
+      <div class="small text-muted mb-1"><i class="bi bi-exclamation-octagon"></i> Factores</div>
+      <div class="factors-wrap">${factorChips(r)}</div>
+    </div>
+    ${actionHtml ? `<div class="mt-3">${actionHtml}</div>` : ""}
+  </div>
+`;
 
   const tabs = [];
   const disabledTabs = [];
@@ -1495,7 +1916,7 @@ function openDetail(r){
     `;
   }
 
-  el("detailBody").innerHTML = `${header}${tabsHtml}`;
+  el("detailBody").innerHTML = `${header}${initialEvalBlock}${tabsHtml}`;
   el("detailTitle").textContent = `Detalle · Identificación avanzada`;
   const modal = bootstrap.Modal.getOrCreateInstance('#detailModal');
   modal.show();
