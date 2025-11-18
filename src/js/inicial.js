@@ -36,9 +36,8 @@ const RISKS = [
 ];
 
 const DEFAULT_INITIAL_EVAL_PATHS = [
-  "../source/FAENA-INSPECCION AVE MORTECINA Metodo Art tool.xlsx",
-  "/source/FAENA-INSPECCION AVE MORTECINA Metodo Art tool.xlsx",
-  "./FAENA-INSPECCION AVE MORTECINA Metodo Art tool.xlsx"
+  "FAENA-INSPECCION AVE MORTECINA Metodo Art tool.xlsx",
+  "FAENA-REVISIÓN DE CONTENEDORES Metodo Art tool.xlsx"
 ];
 const DEFAULT_INITIAL_EVAL_DIR = "../source/ev_ini";
 
