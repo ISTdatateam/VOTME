@@ -23,6 +23,8 @@ const COLS = {
   Q: "Resultado identificación inicial",
 };
 
+const XLSX_CACHE_KEY = "PORTADA_XLSX_CACHE_V1";
+
 const RISKS = [
   { key: 'J', label: COLS.J, css: 'f-rep' },
   { key: 'K', label: COLS.K, css: 'f-post' },
@@ -57,6 +59,45 @@ let FILTERS = { area: "", puesto: "", tarea: "", factorKey: "", factorState: "" 
 let STATE = { page:1, perPage:10, pageMax:1 };
 
 const el = (id) => document.getElementById(id);
+
+function arrayBufferToBase64(buffer){
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for(let i=0;i<bytes.length;i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+function base64ToArrayBuffer(base64){
+  const binary = atob(base64);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for(let i=0;i<len;i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
+function cacheWorkbook(buffer, name){
+  try{
+    const payload = { name: name || "Excel cargado", ts: Date.now(), data: arrayBufferToBase64(buffer) };
+    localStorage.setItem(XLSX_CACHE_KEY, JSON.stringify(payload));
+  }catch(e){
+    console.warn("No se pudo cachear el archivo", e);
+  }
+}
+
+function attemptLoadCachedWorkbook(){
+  try{
+    const raw = localStorage.getItem(XLSX_CACHE_KEY);
+    if(!raw) return false;
+    const payload = JSON.parse(raw);
+    if(!payload?.data) return false;
+    const buffer = base64ToArrayBuffer(payload.data);
+    processWorkbook(buffer);
+    return true;
+  }catch(e){
+    console.warn("No se pudo hidratar el archivo cacheado", e);
+    return false;
+  }
+}
 
 /* ======= Helpers ======= */
 function escapeHtml(str){
@@ -212,7 +253,10 @@ function buildGroupedStructure(headers, topHeaders, infoEnd, idxAcept, idxCrit){
 
 /* ======= Bootstrap ======= */
 document.addEventListener("DOMContentLoaded", () => {
-  attemptFetchDefault();
+  const loadedFromCache = attemptLoadCachedWorkbook();
+  if(!loadedFromCache){
+    attemptFetchDefault();
+  }
   wireUI();
 });
 
@@ -295,6 +339,7 @@ async function attemptFetchDefault(){
     const res = await fetch(window.DEFAULT_XLSX_PATH + `?v=${Date.now()}`, {cache:"no-store"});
     if(!res.ok){ throw new Error("Fetch failed"); }
     const buf = await res.arrayBuffer();
+    cacheWorkbook(buf, "Excel por defecto");
     processWorkbook(buf);
   }catch(e){
     console.warn("No se pudo cargar el Excel por defecto. Seleccione manualmente.", e);
@@ -304,7 +349,10 @@ function handleFile(evt){
   const file = evt.target.files?.[0];
   if(!file) return;
   const reader = new FileReader();
-  reader.onload = (e) => processWorkbook(e.target.result);
+  reader.onload = (e) => {
+    cacheWorkbook(e.target.result, file.name);
+    processWorkbook(e.target.result);
+  };
   reader.readAsArrayBuffer(file);
 }
 

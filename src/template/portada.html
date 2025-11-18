@@ -51,7 +51,19 @@
         <div class="card h-100 shadow-sm border-0">
           <div class="card-body">
             <div class="d-flex align-items-center gap-2 mb-2"><i class="bi bi-upload fs-5 text-primary"></i><h5 class="mb-0">Carga de Excel</h5></div>
-            <p class="text-muted mb-0">Se intentará cargar automáticamente el archivo en <code>src/source/4. LO MIRANDA MATRIZ VOTME 2024 PLANTA CERDOS.XLSX</code>. Si no es posible, podrá seleccionar el archivo manualmente.</p>
+            <div class="d-flex flex-wrap gap-2 mb-2">
+              <label for="portadaFileInput" class="btn btn-primary btn-sm">
+                <i class="bi bi-file-earmark-spreadsheet"></i> Seleccionar Excel
+              </label>
+              <button id="btnClearExcel" class="btn btn-outline-secondary btn-sm d-none" type="button">
+                <i class="bi bi-trash"></i> Limpiar
+              </button>
+              <a href="inicial.html" class="btn btn-outline-primary btn-sm">
+                <i class="bi bi-box-arrow-in-right"></i> Ir a la matriz
+              </a>
+            </div>
+            <input id="portadaFileInput" type="file" accept=".xlsx,.xls" class="d-none" aria-label="Cargar archivo Excel">
+            <div id="uploadStatus" class="small text-muted"></div>
           </div>
         </div>
       </div>
