@@ -1195,8 +1195,9 @@ function renderInitialEvalSnippet(ev){
   if(!parts.length && !descHtml) return "";
 
   return `
+    <div class="small text-muted mb-1"><i class="bi bi-clipboard-check"></i> Evaluación inicial</div>
     <div class="initial-eval-box">
-      <div class="small text-muted mb-1"><i class="bi bi-clipboard-check"></i> Evaluación inicial (HojaResultado)</div>
+      <div class="small text-muted mb-1"></i>Resultados</div>
       <div class="iev-grid">${parts.join("")}</div>
       ${descHtml}
       ${footer}
@@ -1600,8 +1601,6 @@ function cardHtml(r, idx){
           <div class="mb-1"><i class="bi bi-person-badge"></i> <strong>Puesto:</strong> ${escapeHtml(r.C || "-")}</div>
           <div class="mb-2"><i class="bi bi-geo-alt"></i> <strong>Área:</strong> ${escapeHtml(r.B || "-")}</div>
 
-          ${actionHtml ? `<div class="mb-2">${actionHtml}</div>` : ""}
-
           <!-- (1) Fila de horario/HE -->
           <div class="row g-2 small mb-2">
             <div class="col-6"><i class="bi bi-clock"></i> <strong>Horario:</strong> ${escapeHtml(r.E || "-")}</div>
@@ -1622,6 +1621,13 @@ function cardHtml(r, idx){
               <i class="bi bi-clipboard2-pulse"></i> Identificación avanzada
             </div>
             ${summaryBlock}
+          </div>
+
+          <div class="mb-2">
+            <div class="small text-muted mb-1">
+              <i class="bi bi-clipboard2-pulse"></i> Acciones a realizar
+            </div>
+            ${actionHtml ? `<div class="mb-2">${actionHtml}</div>` : ""}
           </div>
 
           ${initialEvalHtml ? `<div class="mb-2">${initialEvalHtml}</div>` : ""}
@@ -1916,7 +1922,7 @@ function openDetail(r){
   }
 
   el("detailBody").innerHTML = `${header}${initialEvalBlock}${tabsHtml}`;
-  el("detailTitle").textContent = `Detalle · Identificación avanzada`;
+  el("detailTitle").textContent = `Detalle`;
   const modal = bootstrap.Modal.getOrCreateInstance('#detailModal');
   modal.show();
 }
