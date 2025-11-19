@@ -1205,7 +1205,7 @@ function renderInitialEvalSnippet(ev){
   `;
 }
 
-function renderInitialEvalDetail(ev){
+function renderInitialEvalDetail(ev, factorLabel){
   if(!ev) return "";
   const parts = [];
   if(ev.puntajeExpo != null){
@@ -1238,9 +1238,13 @@ function renderInitialEvalDetail(ev){
     </div>
   ` : "";
 
+  const title = factorLabel
+    ? `Evaluación inicial · ${escapeHtml(factorLabel)}`
+    : "Evaluación inicial (HojaResultado)";
+
   return `
     <div class="detail-card">
-      <h6 class="section-title mb-2"><i class="bi bi-clipboard-check"></i> Evaluación inicial (HojaResultado)</h6>
+      <h6 class="section-title mb-2"><i class="bi bi-clipboard-check"></i> ${title}</h6>
       ${parts.length ? `<div class="iev-grid">${parts.join("")}</div>` : ""}
       ${rowsHtml}
       ${meta}
@@ -1694,13 +1698,14 @@ function renderMovRepLegacy(mov, summaryBlock){
   `;
 }
 
-function renderMovRepTab(mov, summaryCards){
+function renderMovRepTab(mov, summaryCards, actionHtml){
   const summaryBlock = renderTabSummary(summaryCards);
+  const actionBlock = actionHtml ? `<div class="mb-3">${actionHtml}</div>` : "";
   if(!mov || !(mov.rowArr || mov.rowObj)){
-    return `<div class="postura-tab">${summaryBlock}<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i>No se encontraron detalles coincidentes en la hoja “Movimiento repetitivo”.</div></div>`;
+    return `<div class="postura-tab">${summaryBlock}${actionBlock}<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i>No se encontraron detalles coincidentes en la hoja “Movimiento repetitivo”.</div></div>`;
   }
   if(!MOVREP_STRUCTURE || !Array.isArray(mov.rowArr)){
-    return renderMovRepLegacy(mov, summaryBlock);
+    return renderMovRepLegacy(mov, summaryBlock + actionBlock);
   }
 
   const row = mov.rowArr;
@@ -1725,6 +1730,7 @@ function renderMovRepTab(mov, summaryCards){
   return `
     <div class="postura-tab">
       ${summaryBlock}
+      ${actionBlock}
       ${planBlock ? `<div class="group-block">${planBlock}</div>` : ''}
       <div class="group-block${planBlock ? ' mt-4' : ''}">
         <div class="group-title text-uppercase small text-muted fw-bold mb-2">Condición Aceptable</div>
@@ -1765,7 +1771,7 @@ function openDetail(r){
   const actionLabel = buildAdvancedActionLabel(advancedEntries);
   const actionHtml = renderAdvancedActionLabel(actionLabel);
   const initialEval = getInitialEvalFor(r);
-  const initialEvalBlock = renderInitialEvalDetail(initialEval);
+  const initialEvalBlock = renderInitialEvalDetail(initialEval, factorPresent.mov ? "Movimiento repetitivo" : "");
 
   const tabSummaries = Object.create(null);
   const addSummary = (tabId, cardHtml) => {
@@ -1795,16 +1801,15 @@ function openDetail(r){
         <div>
           <div class="small text-muted">Tarea</div>
           <h5 class="mb-1">${escapeHtml(r.D || "-")}</h5>
-        <div class="mb-1"><i class="bi bi-person-badge"></i> <strong>Puesto:</strong> ${escapeHtml(r.C || "-")}</div>
-        <div class="mb-1"><i class="bi bi-geo-alt"></i> <strong>Área:</strong> ${escapeHtml(r.B || "-")}</div>
+          <div class="mb-1"><i class="bi bi-person-badge"></i> <strong>Puesto:</strong> ${escapeHtml(r.C || "-")}</div>
+          <div class="mb-1"><i class="bi bi-geo-alt"></i> <strong>Área:</strong> ${escapeHtml(r.B || "-")}</div>
+        </div>
+      </div>
+      <div class="mt-3">
+        <div class="small text-muted mb-1"><i class="bi bi-exclamation-octagon"></i> Factores</div>
+        <div class="factors-wrap">${factorChips(r)}</div>
       </div>
     </div>
-    <div class="mt-3">
-      <div class="small text-muted mb-1"><i class="bi bi-exclamation-octagon"></i> Factores</div>
-      <div class="factors-wrap">${factorChips(r)}</div>
-    </div>
-    ${actionHtml ? `<div class="mt-3">${actionHtml}</div>` : ""}
-  </div>
 `;
 
   const tabs = [];
@@ -1815,7 +1820,7 @@ function openDetail(r){
       title: "Movimiento repetitivo",
       present: factorPresent.mov,
       available: Boolean(mov || MOVREP_HEADERS.length),
-      render: () => renderMovRepTab(mov, tabSummaries["mov"])
+      render: () => renderMovRepTab(mov, tabSummaries["mov"], factorPresent.mov ? actionHtml : "")
     },
     {
       id: "postura",
@@ -1921,7 +1926,8 @@ function openDetail(r){
     `;
   }
 
-  el("detailBody").innerHTML = `${header}${initialEvalBlock}${tabsHtml}`;
+  const bodySections = [header, tabsHtml, initialEvalBlock].filter(Boolean).join("");
+  el("detailBody").innerHTML = bodySections;
   el("detailTitle").textContent = `Detalle`;
   const modal = bootstrap.Modal.getOrCreateInstance('#detailModal');
   modal.show();
