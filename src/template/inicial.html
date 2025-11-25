@@ -21,10 +21,24 @@
       <a class="btn btn-outline-light btn-sm" href="cuestionarios_respondidos.html">
         <i class="bi bi-list-ul"></i> Cuestionarios
       </a>
+
+      <!-- Excel principal -->
       <label class="btn btn-outline-light btn-sm mb-0" for="fileInput">
         <i class="bi bi-file-earmark-spreadsheet"></i> Cargar Excel
       </label>
       <input id="fileInput" type="file" accept=".xlsx,.xls" class="d-none">
+
+      <!-- NUEVO: carpeta de Excels -->
+      <label class="btn btn-outline-light btn-sm mb-0" for="folderInput">
+        <i class="bi bi-folder2-open"></i> Cargar carpeta (evaluaciones)
+      </label>
+      <input id="folderInput"
+             type="file"
+             webkitdirectory
+             multiple
+             accept=".xlsx,.xls"
+             class="d-none">
+
       <a class="btn btn-outline-light btn-sm" href="portada.html"><i class="bi bi-house"></i> Portada</a>
     </div>
   </div>

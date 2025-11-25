@@ -543,6 +543,13 @@ document.addEventListener("DOMContentLoaded", () => {
 function wireUI() {
   el("fileInput").addEventListener("change", handleFile);
 
+    // NUEVO: seleccionar carpeta
+  const folderEl = el("folderInput");
+  if (folderEl) {
+    folderEl.addEventListener("change", handleFolder);
+  }
+
+
   el("filterArea").addEventListener("change", () => {
     FILTERS.area = el("filterArea").value || "";
     populatePuesto();
@@ -652,6 +659,50 @@ function handleFile(evt) {
   };
   reader.readAsArrayBuffer(file);
 }
+
+function handleFolder(evt) {
+  const files = Array.from(evt.target.files || []).filter((f) =>
+    /\.(xlsx|xls)$/i.test(f.name || "")
+  );
+  if (!files.length) return;
+
+  // Puedes elegir: limpiar el mapa o acumular.
+  // Si quieres REEMPLAZAR lo que se cargó automáticamente:
+  // INITIAL_EVALS_MAP = Object.create(null);
+
+  let pending = files.length;
+
+  files.forEach((file) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const buffer = e.target.result;
+        const entries = parseInitialEvalWorkbook(buffer, file.name);
+
+        for (const ev of entries || []) {
+          const key = keyTriple(ev.area, ev.puesto, ev.tarea);
+          // si ya existía, lo dejamos; o si prefieres sobrescribir, cambia la condición
+          if (!INITIAL_EVALS_MAP[key]) {
+            INITIAL_EVALS_MAP[key] = ev;
+          }
+        }
+      } catch (err) {
+        console.warn("No se pudo procesar archivo de carpeta:", file.name, err);
+      } finally {
+        pending--;
+        if (pending === 0) {
+          // Cuando terminamos TODOS los archivos de la carpeta, refrescamos
+          if (RAW_ROWS.length) {
+            render();
+          }
+        }
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+
 
 /* ======= Parse libro ======= */
 function pickInicialSheet(wb) {

@@ -3,5 +3,5 @@
   <component name="Black">
     <option name="sdkName" value="Python 3.12 (mediociones-confort-termico)" />
   </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.12 (mediociones-confort-termico)" project-jdk-type="Python SDK" />
+  <component name="ProjectRootManager" version="2" project-jdk-name="llama3_test" project-jdk-type="Python SDK" />
 </project>
