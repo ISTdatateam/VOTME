@@ -1252,7 +1252,7 @@ function renderInitialEvalSnippet(ev) {
       </span>`;
     parts.push(`
       <div class="iev-item">
-        <div class="iev-label">Duración tarea</div>
+        <div class="iev-label">Riesgo tarea</div>
         <div class="iev-value">${pill}</div>
       </div>
     `);
