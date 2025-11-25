@@ -436,3 +436,29 @@ body{
   box-shadow: inset 4px 0 0 0 var(--risk);
 }
 
+/* Badge de categoría de exposición */
+.exp-badge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* Bajo = verde */
+.exp-low {
+  background-color: #d4edda;  /* similar a alert-success */
+  color: #155724;
+}
+
+/* Medio = amarillo */
+.exp-med {
+  background-color: #fff3cd;  /* similar a alert-warning */
+  color: #856404;
+}
+
+/* Alto = rojo */
+.exp-high {
+  background-color: #f8d7da;  /* similar a alert-danger */
+  color: #721c24;
+}
