@@ -21,13 +21,13 @@ import pandas as pd
 def parse_args():
     ap = argparse.ArgumentParser(description="Agregar respuestas aleatorias por área.")
     ap.add_argument("--project-root", default=".", help="Raíz del proyecto (donde está src/).")
-    ap.add_argument("--matrix-name", default="4. LO MIRANDA MATRIZ VOTME 2024 PLANTA CERDOS.XLSX",
+    ap.add_argument("--matrix-name", default="11. SAN VICENTE MATRIZ VOTME 2024 Faenacción.xlsx",
                     help="Nombre del Excel de matriz dentro de src/source/")
     ap.add_argument("--out-name", default="respuestas_cuestionario.xlsx",
                     help="Nombre del Excel de salida dentro de src/source/")
     ap.add_argument("--add-per-area", type=int, default=12,
                     help="Cantidad de nuevas respuestas a agregar por área.")
-    ap.add_argument("--expired-ratio", type=float, default=0.40,
+    ap.add_argument("--expired-ratio", type=float, default=0.10,
                     help="Proporción de respuestas con fecha vencida (0..1).")
     ap.add_argument("--seed", type=int, default=321, help="Semilla aleatoria para reproducibilidad.")
     return ap.parse_args()
@@ -204,21 +204,21 @@ def main():
     pairs, area_counts = read_matrix_pairs(matrix_path)
     if not pairs:
         # Fallback mínimo si no encuentra la matriz
+        # Usamos un puesto genérico por área (puedes renombrarlos si quieres algo más específico)
         pairs = [
-            ("Congelados","Operario de congelados"),
-            ("Producción","Operario de línea"),
-            ("Mantención","Técnico mantenimiento"),
-            ("Embalaje","Operario embalaje"),
-            ("Aseo industrial","Auxiliar de aseo"),
-            ("Calidad","Inspector de calidad"),
+            ("Colgado", "Operario de colgado"),
+            ("Empaque - Chiller", "Operario de empaque - chiller"),
+            ("Eviscerado", "Operario de eviscerado"),
+            ("Garras", "Operario de garras"),
+            ("Sacrificio", "Operario de sacrificio"),
         ]
+
         area_counts = {
-            "Congelados":   {"Hombres":11, "Mujeres":5,  "Total":16},
-            "Producción":   {"Hombres":25, "Mujeres":18, "Total":43},
-            "Mantención":   {"Hombres":12, "Mujeres":1,  "Total":13},
-            "Embalaje":     {"Hombres":10, "Mujeres":20, "Total":30},
-            "Aseo industrial":{"Hombres":8,"Mujeres":7,  "Total":15},
-            "Calidad":      {"Hombres":6,  "Mujeres":9,  "Total":15},
+            "Colgado": {"Hombres": 36, "Mujeres": 0, "Total": 36},
+            "Empaque - Chiller": {"Hombres": 81, "Mujeres": 3, "Total": 84},
+            "Eviscerado": {"Hombres": 87, "Mujeres": 28, "Total": 115},
+            "Garras": {"Hombres": 23, "Mujeres": 17, "Total": 40},
+            "Sacrificio": {"Hombres": 8, "Mujeres": 2, "Total": 10},
         }
 
     # Puestos por área
