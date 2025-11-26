@@ -36,8 +36,19 @@ const RISKS = [
 ];
 
 const DEFAULT_INITIAL_EVAL_PATHS = [
-  "FAENA-INSPECCION AVE MORTECINA Metodo Art tool.xlsx",
-  "FAENA-REVISIÓN DE CONTENEDORES Metodo Art tool.xlsx",
+    "FAENA-EVISCERADO-AURICULOCOLELULITIS-Metodo Art tool.xlsx",
+    "FAENA-EVISCERADO-DECOMISO-Metodo Art tool.xlsx",
+    "FAENA-EVISCERADO-EXPURGO DE ALA-Metodo Art tool.xlsx",
+    "FAENA-EVISCERADO-EXPURGO DE INCISION Metodo Art tool.xlsx",
+    "FAENA-EVISCERADO-EXPURGO DE VISCERAS-Metodo Art tool.xlsx",
+    "FAENA-EVISCERADO-LAVADO Y ASPIRADO-Metodo Art tool.xlsx",
+    "FAENA-EVISCERADO-PUNTO DE INSPECCIÓN-Metodo Art tool.xlsx",
+    "FAENA-EVISCERADO-RECOGLADO-Metodo Art tool.xlsx",
+    "FAENA-EVISCERADO-REPOSE DE CONTRE-Metodo Art tool.xlsx",
+    "FAENA-EVISCERADO-REPOSE DE PANAS-Metodo Art tool.xlsx",
+    "FAENA-EVISCERADO-REVISION POST LAVADORA-Metodo Art tool.xlsx",
+    "FAENA-EVISCERADO-TRANSFERIDOR Metodo Art tool.xlsx",
+    "FAENA-INSPECCION AVE MORTECINA Metodo Art tool.xlsx"
 ];
 const DEFAULT_INITIAL_EVAL_DIR = "../source/ev_ini";
 
